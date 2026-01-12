@@ -47,7 +47,7 @@ export default async (req, context) => {
         ${client.notes || null},
         ${client.linkedId || null},
         ${client.mchatHighRisk || false},
-        ${JSON.stringify(client.assessments || {})}
+        ${JSON.stringify(client.assessments || {})}::jsonb
       )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
@@ -74,8 +74,4 @@ export default async (req, context) => {
       error: error.message
     }, { status: 500 });
   }
-};
-
-export const config = {
-  path: "/api/clients/save"
 };

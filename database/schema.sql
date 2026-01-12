@@ -50,7 +50,7 @@ SELECT
   EXTRACT(YEAR FROM AGE(CURRENT_DATE, dob)) * 12 + 
   EXTRACT(MONTH FROM AGE(CURRENT_DATE, dob)) as current_age_months,
   EXTRACT(DAY FROM (CURRENT_DATE - admit_date)) as days_in_service,
-  jsonb_object_keys(assessments) as completed_assessments_count
+  jsonb_object_length(assessments) as completed_assessments_count
 FROM clients c;
 
 -- Insert initial data (optional - can be done via app)

@@ -1527,8 +1527,10 @@ export default function CFAssessmentManager() {
 
   // Save to localStorage as backup whenever clients change
   useEffect(() => {
-    if (clients.length > 0) {
+    try {
       localStorage.setItem('cf_caseload_v5', JSON.stringify(clients));
+    } catch {
+      // ignore write errors (e.g., private mode / quota)
     }
   }, [clients]);
 
@@ -1545,13 +1547,13 @@ export default function CFAssessmentManager() {
       // Save to database
       await api.saveClient(newClient);
       // Update local state
-      setClients([...clients, newClient]);
+      setClients(prev => [...prev, newClient]);
       setSyncStatus('synced');
     } catch (error) {
       console.error('Failed to save client:', error);
       setSyncStatus('error');
       // Still update local state as fallback
-      setClients([...clients, newClient]);
+      setClients(prev => [...prev, newClient]);
       // Show error to user (optional)
       alert('Failed to save to database. Changes saved locally only.');
     }
@@ -1563,7 +1565,7 @@ export default function CFAssessmentManager() {
       // Save to database
       await api.saveClient(updatedClient);
       // Update local state
-      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+      setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
       setSyncStatus('synced');
       setIsEditModalOpen(false);
       setEditingClient(null);
@@ -1571,7 +1573,7 @@ export default function CFAssessmentManager() {
       console.error('Failed to update client:', error);
       setSyncStatus('error');
       // Still update local state as fallback
-      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+      setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
       setIsEditModalOpen(false);
       setEditingClient(null);
       alert('Failed to save to database. Changes saved locally only.');
@@ -1607,7 +1609,7 @@ export default function CFAssessmentManager() {
         // Delete from database
         await api.deleteClient(id);
         // Update local state
-        setClients(clients.filter(c => c.id !== id));
+        setClients(prev => prev.filter(c => c.id !== id));
         if (activeId === id) {
           setView('list');
           setActiveId(null);
@@ -1617,7 +1619,7 @@ export default function CFAssessmentManager() {
         console.error('Failed to delete client:', error);
         setSyncStatus('error');
         // Still update local state
-        setClients(clients.filter(c => c.id !== id));
+        setClients(prev => prev.filter(c => c.id !== id));
         if (activeId === id) {
           setView('list');
           setActiveId(null);
@@ -1657,7 +1659,7 @@ export default function CFAssessmentManager() {
     }
 
     // Update local state immediately for responsiveness
-    setClients(clients.map(c => c.id === activeId ? updatedClient : c));
+    setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
 
     // Save to database in background
     try {

@@ -46,7 +46,3 @@ export default async (req, context) => {
     }, { status: 500 });
   }
 };
-
-export const config = {
-  path: "/api/clients/delete"
-};

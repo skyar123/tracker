@@ -3,7 +3,7 @@ import {
   Users, Clock, AlertCircle, CheckCircle, Calendar, ChevronDown, ChevronRight,
   ArrowLeft, Activity, AlertTriangle, Plus, Trash2, Calculator, Printer,
   FileText, Baby, Heart, Home, BookOpen, ExternalLink, Info, FolderOpen,
-  ClipboardList, Flag, Sparkles, X, Stethoscope, Handshake, Save, Link,
+  ClipboardList, Flag, Sparkles, X, Stethoscope, UserPlus, Save, Link,
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
   TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database
 } from 'lucide-react';
@@ -25,7 +25,7 @@ const ROLES = {
     short: 'FRP',
     color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     accent: 'emerald',
-    icon: Handshake 
+    icon: UserPlus 
   },
   SHARED: { 
     label: 'Together', 
@@ -1519,7 +1519,7 @@ export default function CFAssessmentManager() {
               <span className="text-sm font-medium text-sky-600">{stats.totalClinician} clinician docs</span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
-              <Handshake className="w-4 h-4 text-emerald-500" />
+              <UserPlus className="w-4 h-4 text-emerald-500" />
               <span className="text-sm font-medium text-emerald-600">{stats.totalFRP} FRP docs</span>
             </div>
           </div>

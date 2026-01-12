@@ -907,7 +907,7 @@ const DeadlineTimeline = ({ clients }) => {
   );
 };
 
-const ClientCard = ({ client, onClick, onDelete, linkedClient }) => {
+const ClientCard = ({ client, onClick, onDelete, onEdit, linkedClient }) => {
   const workload = calculateWorkload(client);
   const { phase, days, clinicianLeft, frpLeft, sharedLeft, total } = workload;
   const age = getAgeInMonths(client.dob);
@@ -952,12 +952,22 @@ const ClientCard = ({ client, onClick, onDelete, linkedClient }) => {
               <p className="text-xs text-slate-400">{client.caregiver}</p>
             </div>
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
-            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+            <button 
+              onClick={(e) => { e.stopPropagation(); onEdit(client); }}
+              className="text-slate-300 hover:text-blue-500 transition-all p-1"
+              title="Edit client"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
+              className="text-slate-300 hover:text-red-500 transition-all p-1"
+              title="Delete client"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Linked sibling indicator */}
@@ -1191,6 +1201,149 @@ const BackupModal = ({ isOpen, onClose, clients, onRestore }) => {
   );
 };
 
+const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
+  const [data, setData] = useState({ 
+    name: '', 
+    nickname: '', 
+    dob: '', 
+    admitDate: '', 
+    type: 'child',
+    caregiver: '',
+    notes: ''
+  });
+
+  // Update form data when client changes
+  useEffect(() => {
+    if (client) {
+      setData({
+        name: client.name || '',
+        nickname: client.nickname || '',
+        dob: client.dob || '',
+        admitDate: client.admitDate || '',
+        type: client.type || 'child',
+        caregiver: client.caregiver || '',
+        notes: client.notes || ''
+      });
+    }
+  }, [client]);
+
+  if (!isOpen || !client) return null;
+
+  const handleSave = () => {
+    if (data.name && data.admitDate) {
+      onSave({
+        ...client,
+        ...data
+      });
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Edit2 className="w-5 h-5" /> Edit Family Record
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Type toggle */}
+          <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+            <button 
+              onClick={() => setData({...data, type: 'child'})}
+              className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                data.type === 'child' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+              }`}
+            >
+              <Baby className="w-4 h-4" /> Child AA
+            </button>
+            <button 
+              onClick={() => setData({...data, type: 'pregnant'})}
+              className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                data.type === 'pregnant' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-500'
+              }`}
+            >
+              <Heart className="w-4 h-4" /> Pregnant AA
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Child/Client Name</label>
+              <input 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.name} 
+                onChange={e => setData({...data, name: e.target.value})}
+                placeholder="Full Name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nickname</label>
+              <input 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.nickname} 
+                onChange={e => setData({...data, nickname: e.target.value})}
+                placeholder="Code name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Caregiver</label>
+              <input 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.caregiver} 
+                onChange={e => setData({...data, caregiver: e.target.value})}
+                placeholder="Primary caregiver"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">DOB</label>
+              <input 
+                type="date"
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.dob} 
+                onChange={e => setData({...data, dob: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Admit Date</label>
+              <input 
+                type="date"
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.admitDate} 
+                onChange={e => setData({...data, admitDate: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notes</label>
+              <textarea 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
+                rows={2}
+                value={data.notes} 
+                onChange={e => setData({...data, notes: e.target.value})}
+                placeholder="Any notes..."
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 pb-6 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 text-slate-500 font-medium hover:bg-slate-50 rounded-xl transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 shadow-md transition-all">
+            Update Family
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AddClientModal = ({ isOpen, onClose, onSave }) => {
   const [data, setData] = useState({ 
     name: '', 
@@ -1337,6 +1490,8 @@ export default function CFAssessmentManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('urgency'); // urgency, name, days
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
@@ -1400,6 +1555,32 @@ export default function CFAssessmentManager() {
       // Show error to user (optional)
       alert('Failed to save to database. Changes saved locally only.');
     }
+  };
+
+  const updateClient = async (updatedClient) => {
+    try {
+      setSyncStatus('syncing');
+      // Save to database
+      await api.saveClient(updatedClient);
+      // Update local state
+      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+      setSyncStatus('synced');
+      setIsEditModalOpen(false);
+      setEditingClient(null);
+    } catch (error) {
+      console.error('Failed to update client:', error);
+      setSyncStatus('error');
+      // Still update local state as fallback
+      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+      setIsEditModalOpen(false);
+      setEditingClient(null);
+      alert('Failed to save to database. Changes saved locally only.');
+    }
+  };
+
+  const handleEditClient = (client) => {
+    setEditingClient(client);
+    setIsEditModalOpen(true);
   };
 
   const restoreFromBackup = async (restoredClients) => {
@@ -1693,6 +1874,7 @@ export default function CFAssessmentManager() {
                 key={c.id}
                 client={c}
                 onClick={() => { setActiveId(c.id); setView('detail'); setActivePhase('baseline'); }}
+                onEdit={handleEditClient}
                 onDelete={deleteClient}
                 linkedClient={c.linkedId ? clients.find(x => x.id === c.linkedId) : null}
               />
@@ -1702,6 +1884,7 @@ export default function CFAssessmentManager() {
       </div>
 
       <AddClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={addClient} />
+      <EditClientModal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingClient(null); }} onSave={updateClient} client={editingClient} />
       <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} clients={clients} onRestore={restoreFromBackup} />
     </div>
     );

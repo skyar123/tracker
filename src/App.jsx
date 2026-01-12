@@ -7,6 +7,7 @@ import {
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
   TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database
 } from 'lucide-react';
+import { api } from './api.js';
 
 // ============================================================================
 // CONFIGURATION
@@ -1326,12 +1327,9 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
 // ============================================================================
 
 export default function CFAssessmentManager() {
-  const [clients, setClients] = useState(() => {
-    try {
-      const saved = localStorage.getItem('cf_caseload_v5');
-      return saved ? JSON.parse(saved) : INITIAL_CLIENTS;
-    } catch { return INITIAL_CLIENTS; }
-  });
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
   const [view, setView] = useState('list');
   const [activeId, setActiveId] = useState(null);
   const [activePhase, setActivePhase] = useState('baseline');
@@ -1342,8 +1340,41 @@ export default function CFAssessmentManager() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
+  // Load clients from database on mount
   useEffect(() => {
-    localStorage.setItem('cf_caseload_v5', JSON.stringify(clients));
+    const loadClients = async () => {
+      try {
+        setLoading(true);
+        const data = await api.getClients();
+        setClients(data);
+        // Also save to localStorage as backup
+        localStorage.setItem('cf_caseload_v5', JSON.stringify(data));
+      } catch (error) {
+        console.error('Failed to load clients from database:', error);
+        // Fall back to localStorage
+        try {
+          const saved = localStorage.getItem('cf_caseload_v5');
+          if (saved) {
+            setClients(JSON.parse(saved));
+          } else {
+            setClients(INITIAL_CLIENTS);
+          }
+        } catch {
+          setClients(INITIAL_CLIENTS);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadClients();
+  }, []);
+
+  // Save to localStorage as backup whenever clients change
+  useEffect(() => {
+    if (clients.length > 0) {
+      localStorage.setItem('cf_caseload_v5', JSON.stringify(clients));
+    }
   }, [clients]);
 
   const client = useMemo(() => clients.find(c => c.id === activeId), [clients, activeId]);
@@ -1353,26 +1384,72 @@ export default function CFAssessmentManager() {
   }, [client, clients]);
 
   // Actions
-  const addClient = (newClient) => {
-    setClients([...clients, newClient]);
+  const addClient = async (newClient) => {
+    try {
+      setSyncStatus('syncing');
+      // Save to database
+      await api.saveClient(newClient);
+      // Update local state
+      setClients([...clients, newClient]);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Failed to save client:', error);
+      setSyncStatus('error');
+      // Still update local state as fallback
+      setClients([...clients, newClient]);
+      // Show error to user (optional)
+      alert('Failed to save to database. Changes saved locally only.');
+    }
   };
 
-  const restoreFromBackup = (restoredClients) => {
-    setClients(restoredClients);
+  const restoreFromBackup = async (restoredClients) => {
+    try {
+      setSyncStatus('syncing');
+      // Migrate all clients to database
+      await api.migrateData(restoredClients);
+      // Update local state
+      setClients(restoredClients);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Failed to restore backup:', error);
+      setSyncStatus('error');
+      // Still update local state
+      setClients(restoredClients);
+      alert('Failed to sync to database. Changes saved locally only.');
+    }
   };
 
-  const deleteClient = (id) => {
+  const deleteClient = async (id) => {
     if (window.confirm("Remove this family from caseload?")) {
-      setClients(clients.filter(c => c.id !== id));
-      if (activeId === id) {
-        setView('list');
-        setActiveId(null);
+      try {
+        setSyncStatus('syncing');
+        // Delete from database
+        await api.deleteClient(id);
+        // Update local state
+        setClients(clients.filter(c => c.id !== id));
+        if (activeId === id) {
+          setView('list');
+          setActiveId(null);
+        }
+        setSyncStatus('synced');
+      } catch (error) {
+        console.error('Failed to delete client:', error);
+        setSyncStatus('error');
+        // Still update local state
+        setClients(clients.filter(c => c.id !== id));
+        if (activeId === id) {
+          setView('list');
+          setActiveId(null);
+        }
+        alert('Failed to delete from database. Removed locally only.');
       }
     }
   };
 
-  const toggleAssessment = (key) => {
+  const toggleAssessment = async (key) => {
     if (!client) return;
+
+    let updatedClient;
 
     // M-CHAT special handling
     if (key === 'base_mchat' && !client.assessments?.[key]) {
@@ -1385,19 +1462,33 @@ export default function CFAssessmentManager() {
         "Click OK if score was 3 or higher."
       );
       
-      setClients(clients.map(c => c.id === activeId ? {
-        ...c,
-        assessments: { ...c.assessments, [key]: new Date().toISOString() },
+      updatedClient = {
+        ...client,
+        assessments: { ...client.assessments, [key]: new Date().toISOString() },
         mchatHighRisk: isHighRisk
-      } : c));
-      return;
+      };
+    } else {
+      const isDone = !!client.assessments?.[key];
+      updatedClient = {
+        ...client,
+        assessments: { ...client.assessments, [key]: isDone ? null : new Date().toISOString() }
+      };
     }
 
-    const isDone = !!client.assessments?.[key];
-    setClients(clients.map(c => c.id === activeId ? {
-      ...c,
-      assessments: { ...c.assessments, [key]: isDone ? null : new Date().toISOString() }
-    } : c));
+    // Update local state immediately for responsiveness
+    setClients(clients.map(c => c.id === activeId ? updatedClient : c));
+
+    // Save to database in background
+    try {
+      setSyncStatus('syncing');
+      await api.saveClient(updatedClient);
+      setSyncStatus('synced');
+    } catch (error) {
+      console.error('Failed to save assessment:', error);
+      setSyncStatus('error');
+      // Data is already updated locally, just notify user
+      setTimeout(() => setSyncStatus('synced'), 2000);
+    }
   };
 
   // Filter and sort clients
@@ -1458,7 +1549,20 @@ export default function CFAssessmentManager() {
   // ============================================================================
   // RENDER: LIST VIEW
   // ============================================================================
-  const renderList = () => (
+  const renderList = () => {
+    // Show loading state
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <RefreshCw className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+            <p className="text-slate-600 font-medium">Loading your caseload...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-30">
@@ -1467,6 +1571,21 @@ export default function CFAssessmentManager() {
             <div>
               <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <ClipboardList className="text-blue-600" /> CF Assessment Tracker
+                {syncStatus === 'syncing' && (
+                  <span className="text-xs text-blue-600 flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
+                  </span>
+                )}
+                {syncStatus === 'synced' && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Synced
+                  </span>
+                )}
+                {syncStatus === 'error' && (
+                  <span className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Sync Error
+                  </span>
+                )}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">RHA Child First • Child AA & Pregnant AA</p>
             </div>
@@ -1585,7 +1704,8 @@ export default function CFAssessmentManager() {
       <AddClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={addClient} />
       <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} clients={clients} onRestore={restoreFromBackup} />
     </div>
-  );
+    );
+  };
 
   // ============================================================================
   // RENDER: DETAIL VIEW

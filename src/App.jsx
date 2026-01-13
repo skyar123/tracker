@@ -5,10 +5,9 @@ import {
   FileText, Baby, Heart, Home, BookOpen, ExternalLink, Info, FolderOpen,
   ClipboardList, Flag, Sparkles, X, Stethoscope, UserPlus, Save, Link,
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
-  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database, LogOut
+  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database
 } from 'lucide-react';
 import { api } from './api.js';
-import { Login } from './Login.jsx';
 
 // ============================================================================
 // CONFIGURATION
@@ -1481,7 +1480,6 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
 // ============================================================================
 
 export default function CFAssessmentManager() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
@@ -1497,60 +1495,35 @@ export default function CFAssessmentManager() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
-  // Check authentication on mount
+  // Load clients from database on mount
   useEffect(() => {
-    const token = localStorage.getItem('cf_auth_token');
-    if (token) {
-      setIsAuthenticated(true);
-      loadClients();
-    } else {
-      setLoading(false);
-    }
-  }, []);
-
-  // Load clients from database
-  const loadClients = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getClients();
-      setClients(data);
-      // Also save to localStorage as backup
-      localStorage.setItem('cf_caseload_v5', JSON.stringify(data));
-    } catch (error) {
-      console.error('Failed to load clients from database:', error);
-      // Fall back to localStorage
+    const loadClients = async () => {
       try {
-        const saved = localStorage.getItem('cf_caseload_v5');
-        if (saved) {
-          setClients(JSON.parse(saved));
-        } else {
+        setLoading(true);
+        const data = await api.getClients();
+        setClients(data);
+        // Also save to localStorage as backup
+        localStorage.setItem('cf_caseload_v5', JSON.stringify(data));
+      } catch (error) {
+        console.error('Failed to load clients from database:', error);
+        // Fall back to localStorage
+        try {
+          const saved = localStorage.getItem('cf_caseload_v5');
+          if (saved) {
+            setClients(JSON.parse(saved));
+          } else {
+            setClients(INITIAL_CLIENTS);
+          }
+        } catch {
           setClients(INITIAL_CLIENTS);
         }
-      } catch {
-        setClients(INITIAL_CLIENTS);
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  const handleLogin = async (token) => {
-    setIsAuthenticated(true);
-    await loadClients();
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('cf_auth_token');
-    setIsAuthenticated(false);
-    setClients([]);
-    setView('list');
-    setActiveId(null);
-  };
-
-  // Show login screen if not authenticated
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
-  }
+    loadClients();
+  }, []);
 
   // Save to localStorage as backup whenever clients change
   useEffect(() => {
@@ -1814,14 +1787,6 @@ export default function CFAssessmentManager() {
               >
                 <FolderOpen className="w-4 h-4 text-amber-500" /> Forms
               </a>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-red-600 bg-white border border-slate-200 rounded-xl hover:border-red-200 transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"

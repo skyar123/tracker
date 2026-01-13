@@ -25,11 +25,14 @@ export const Login = ({ onLogin }) => {
         localStorage.setItem('cf_auth_token', data.token);
         onLogin(data.token);
       } else {
-        setError('Invalid password. Please try again.');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Login error:', errorData);
+        setError('Invalid password. Please try again. (Default: 1234 if not set)');
         setPassword('');
       }
     } catch (err) {
-      setError('Unable to connect. Please check your connection.');
+      console.error('Connection error:', err);
+      setError('Unable to connect. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

@@ -1,19 +1,5 @@
 import { neon } from '@netlify/neon';
 
-function getPasswordFromHeaders(headers) {
-  const auth = headers.authorization || headers.Authorization;
-  if (!auth) return null;
-  if (auth.startsWith('Bearer ')) {
-    return auth.substring(7);
-  }
-  return auth;
-}
-
-function verifyPassword(password) {
-  const appPassword = process.env.APP_PASSWORD || '1234';
-  return password === appPassword;
-}
-
 // This function helps migrate data from localStorage backup to database
 export default async (req, context) => {
   if (req.method !== 'POST') {
@@ -21,15 +7,6 @@ export default async (req, context) => {
       success: false,
       error: 'Method not allowed'
     }, { status: 405 });
-  }
-
-  // Check authentication
-  const password = getPasswordFromHeaders(req.headers || {});
-  if (!password || !verifyPassword(password)) {
-    return Response.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 }
-    );
   }
 
   try {

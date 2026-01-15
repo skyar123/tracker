@@ -1,94 +1,82 @@
-// API utility functions for database operations
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+  writeBatch,
+} from 'firebase/firestore';
 
-const API_BASE = '/.netlify/functions';
+import { db } from './firebase.js';
+
+const clientsCollection = collection(db, 'clients');
 
 export const api = {
-  // Fetch all clients from database
   async getClients() {
     try {
-      const response = await fetch(`${API_BASE}/get-clients`);
-
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to fetch clients');
-      }
-      
-      return data.data || [];
+      const snapshot = await getDocs(query(clientsCollection, orderBy('admitDate', 'desc')));
+      return snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
     } catch (error) {
       console.error('Error fetching clients:', error);
-      // Fall back to localStorage if database fails
       const saved = localStorage.getItem('cf_caseload_v5');
       return saved ? JSON.parse(saved) : [];
     }
   },
 
-  // Save a client to database
   async saveClient(client) {
     try {
-      const response = await fetch(`${API_BASE}/save-client`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const clientRef = doc(db, 'clients', client.id);
+      await setDoc(
+        clientRef,
+        {
+          ...client,
+          updatedAt: new Date().toISOString(),
         },
-        body: JSON.stringify(client),
-      });
-      
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to save client');
-      }
-      
-      return data.data;
+        { merge: true }
+      );
+      return client;
     } catch (error) {
       console.error('Error saving client:', error);
       throw error;
     }
   },
 
-  // Delete a client from database
   async deleteClient(id) {
     try {
-      const response = await fetch(`${API_BASE}/delete-client`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id }),
-      });
-      
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to delete client');
-      }
-      
-      return data.data;
+      const clientRef = doc(db, 'clients', id);
+      await deleteDoc(clientRef);
+      return { id };
     } catch (error) {
       console.error('Error deleting client:', error);
       throw error;
     }
   },
 
-  // Migrate data from localStorage backup to database
   async migrateData(clients) {
     try {
-      const response = await fetch(`${API_BASE}/migrate-data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ clients }),
+      const batch = writeBatch(db);
+      clients.forEach((client) => {
+        const clientRef = doc(db, 'clients', client.id);
+        batch.set(
+          clientRef,
+          {
+            ...client,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
       });
-      
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to migrate data');
-      }
-      
-      return data.data;
+      await batch.commit();
+      return {
+        imported: clients.length,
+        total: clients.length,
+        errors: null,
+      };
     } catch (error) {
       console.error('Error migrating data:', error);
       throw error;

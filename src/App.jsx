@@ -648,6 +648,21 @@ const calculatePhaseProgress = (client, phase) => {
   return total > 0 ? Math.round((completed / total) * 100) : 0;
 };
 
+// Helper: Get the appropriate initial phase for a client based on their current phase
+const getInitialPhase = (client) => {
+  const days = getDaysInService(client.admitDate);
+  const phase = getPhaseInfo(client, days);
+  
+  // Map phase ID to activePhase value
+  if (phase.id === 'baseline') return 'baseline';
+  if (phase.id === 'q1' || phase.id === 'q3') return 'quarterly';
+  if (phase.id === 'sixMonth') return 'sixMonth';
+  if (phase.id === 'annual') return 'discharge';
+  
+  // Default to baseline
+  return 'baseline';
+};
+
 const UrgencyIndicator = ({ daysUntil, isOverdue }) => {
   if (isOverdue) {
     return <span className="text-xs font-bold text-red-600">{Math.abs(daysUntil)}d overdue</span>;
@@ -2333,7 +2348,12 @@ export default function CFAssessmentManager() {
               <ClientCard
                 key={c.id}
                 client={c}
-                onClick={() => { setActiveId(c.id); setView('detail'); setActivePhase('baseline'); }}
+                onClick={() => { 
+                  const initialPhase = getInitialPhase(c);
+                  setActiveId(c.id); 
+                  setView('detail'); 
+                  setActivePhase(initialPhase); 
+                }}
                 onEdit={handleEditClient}
                 onDelete={deleteClient}
                 linkedClient={c.linkedId ? clients.find(x => x.id === c.linkedId) : null}
@@ -2861,7 +2881,11 @@ export default function CFAssessmentManager() {
           {/* Linked sibling */}
           {linkedClient && (
             <div 
-              onClick={() => { setActiveId(linkedClient.id); setActivePhase('baseline'); }}
+              onClick={() => { 
+                const initialPhase = getInitialPhase(linkedClient);
+                setActiveId(linkedClient.id); 
+                setActivePhase(initialPhase); 
+              }}
               className="bg-violet-50 border border-violet-200 rounded-2xl p-4 cursor-pointer hover:bg-violet-100 transition-colors"
             >
               <h4 className="font-bold text-violet-800 mb-2 flex items-center gap-2">

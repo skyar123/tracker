@@ -5,11 +5,19 @@ import {
   FileText, Baby, Heart, Home, BookOpen, ExternalLink, Info, FolderOpen,
   ClipboardList, Flag, Sparkles, X, Stethoscope, UserPlus, Save, Link,
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
-  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database,
+  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database, CheckCircle2,
   Bell, BellOff, Calendar as CalendarIcon, BarChart3, History, Undo2,
   Settings, Layers, CheckSquare, FileSpreadsheet
 } from 'lucide-react';
 import { api } from './api.js';
+import { 
+  getAssessment, 
+  setAssessment, 
+  isAssessmentComplete, 
+  isAssessmentUploaded,
+  getAssessmentDate,
+  migrateClientToNewFormat 
+} from './assessmentUtils.js';
 
 // ============================================================================
 // CONFIGURATION
@@ -714,7 +722,7 @@ const ProgressRing = ({ percent, size = 40, strokeWidth = 4, color = 'blue' }) =
   );
 };
 
-const AssessmentRow = ({ item, isChecked, onToggle, dateCompleted, isOverdue, showNote, roleFilter }) => {
+const AssessmentRow = ({ item, isChecked, onToggle, dateCompleted, isOverdue, showNote, roleFilter, isUploaded, onToggleUpload, assessmentKey }) => {
   const [expanded, setExpanded] = useState(false);
   
   // Filter by role
@@ -722,27 +730,39 @@ const AssessmentRow = ({ item, isChecked, onToggle, dateCompleted, isOverdue, sh
     if (item.role !== roleFilter && item.role !== 'SHARED') return null;
   }
 
+  const handleUploadClick = (e) => {
+    e.stopPropagation();
+    if (onToggleUpload && isChecked) {
+      onToggleUpload();
+    }
+  };
+
   return (
     <div className={`border-b border-slate-100 last:border-0 transition-colors ${isOverdue && !isChecked ? 'bg-red-50/40' : ''}`}>
       <div 
-        className={`p-3 sm:p-4 flex items-start gap-3 cursor-pointer group transition-all ${isChecked ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
-        onClick={onToggle}
+        className={`p-3 sm:p-4 flex items-start gap-3 group transition-all ${isChecked ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
       >
-        {/* Checkbox */}
-        <div className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${
-          isChecked 
-            ? 'bg-emerald-500 border-emerald-500' 
-            : isOverdue 
-              ? 'border-red-300 bg-white group-hover:border-red-400' 
-              : 'border-slate-300 bg-white group-hover:border-blue-400'
-        }`}>
+        {/* Checkbox - clickable for toggle */}
+        <div 
+          className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+            isChecked 
+              ? 'bg-emerald-500 border-emerald-500' 
+              : isOverdue 
+                ? 'border-red-300 bg-white group-hover:border-red-400' 
+                : 'border-slate-300 bg-white group-hover:border-blue-400'
+          }`}
+          onClick={onToggle}
+        >
           {isChecked && <CheckCircle className="w-3 h-3 text-white" />}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className={`font-semibold text-sm transition-all ${isChecked ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+            <span 
+              className={`font-semibold text-sm transition-all cursor-pointer ${isChecked ? 'text-slate-400 line-through' : 'text-slate-800'}`}
+              onClick={onToggle}
+            >
               {item.name}
             </span>
             <RoleBadge roleKey={item.role} />
@@ -756,6 +776,28 @@ const AssessmentRow = ({ item, isChecked, onToggle, dateCompleted, isOverdue, sh
               <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5">
                 <AlertTriangle className="w-2.5 h-2.5" /> Critical
               </span>
+            )}
+            {/* Upload status indicator */}
+            {isChecked && (
+              <button
+                onClick={handleUploadClick}
+                className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase flex items-center gap-0.5 transition-colors ${
+                  isUploaded 
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                    : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                }`}
+                title={isUploaded ? 'Mark as not uploaded' : 'Mark as uploaded'}
+              >
+                {isUploaded ? (
+                  <>
+                    <CheckCircle2 className="w-2.5 h-2.5" /> Uploaded
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-2.5 h-2.5" /> Pending
+                  </>
+                )}
+              </button>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2287,8 +2329,10 @@ export default function CFAssessmentManager() {
       return;
     }
 
-    let updatedClient;
-    const isCurrentlyDone = !!client.assessments?.[key];
+    let updatedClient = { ...client };
+    const currentAssessment = getAssessment(client, key);
+    const isCurrentlyDone = isAssessmentComplete(currentAssessment);
+    const today = new Date().toISOString().split('T')[0];
 
     // M-CHAT special handling
     if (key === 'base_mchat' && !isCurrentlyDone) {
@@ -2301,16 +2345,23 @@ export default function CFAssessmentManager() {
         "Click OK if score was 3 or higher."
       );
       
-      updatedClient = {
-        ...client,
-        assessments: { ...client.assessments, [key]: new Date().toISOString() },
-        mchatHighRisk: isHighRisk
-      };
+      // Use setAssessment utility to handle both formats
+      setAssessment(updatedClient, key, { completed: today, uploaded: null });
+      updatedClient.mchatHighRisk = isHighRisk;
     } else {
-      updatedClient = {
-        ...client,
-        assessments: { ...client.assessments, [key]: isCurrentlyDone ? null : new Date().toISOString() }
-      };
+      // Toggle completion - use new format with upload tracking
+      if (isCurrentlyDone) {
+        // Uncomplete - remove assessment
+        setAssessment(updatedClient, key, null);
+      } else {
+        // Complete - add with today's date, not uploaded yet
+        setAssessment(updatedClient, key, { completed: today, uploaded: null });
+      }
+    }
+
+    // Ensure assessments object exists for backward compatibility
+    if (!updatedClient.assessments) {
+      updatedClient.assessments = {};
     }
 
     // Save and update local state with the saved version (includes updatedAt)
@@ -2328,6 +2379,46 @@ export default function CFAssessmentManager() {
     } catch (error) {
       console.error('Failed to save assessment:', error);
       // Still update local state even if save fails
+      setClients(clients.map(c => c.id === activeId ? updatedClient : c));
+    }
+  };
+
+  const toggleUpload = async (key) => {
+    if (!client) return;
+
+    const currentAssessment = getAssessment(client, key);
+    if (!isAssessmentComplete(currentAssessment)) return;
+
+    const updatedClient = { ...client };
+    const today = new Date().toISOString().split('T')[0];
+    const isCurrentlyUploaded = isAssessmentUploaded(currentAssessment);
+    
+    // Toggle upload status
+    if (isCurrentlyUploaded) {
+      // Mark as not uploaded
+      setAssessment(updatedClient, key, { 
+        completed: getAssessmentDate(currentAssessment), 
+        uploaded: null 
+      });
+    } else {
+      // Mark as uploaded
+      setAssessment(updatedClient, key, { 
+        completed: getAssessmentDate(currentAssessment), 
+        uploaded: today 
+      });
+    }
+
+    // Ensure assessments object exists for backward compatibility
+    if (!updatedClient.assessments) {
+      updatedClient.assessments = {};
+    }
+
+    const previousClient = client;
+    try {
+      const savedClient = await api.saveClient(updatedClient);
+      setClients(clients.map(c => c.id === activeId ? savedClient : c));
+    } catch (error) {
+      console.error('Failed to save upload status:', error);
       setClients(clients.map(c => c.id === activeId ? updatedClient : c));
     }
   };
@@ -2859,9 +2950,12 @@ export default function CFAssessmentManager() {
                         <AssessmentRow
                           key={item.id}
                           item={item}
-                          isChecked={!!client.assessments?.[`base_${item.id}`]}
-                          dateCompleted={client.assessments?.[`base_${item.id}`]}
+                          assessmentKey={`base_${item.id}`}
+                          isChecked={isAssessmentComplete(getAssessment(client, `base_${item.id}`))}
+                          dateCompleted={getAssessmentDate(getAssessment(client, `base_${item.id}`))}
+                          isUploaded={isAssessmentUploaded(getAssessment(client, `base_${item.id}`))}
                           onToggle={() => toggleAssessment(`base_${item.id}`)}
+                          onToggleUpload={() => toggleUpload(`base_${item.id}`)}
                           isOverdue={weekOverdue}
                           roleFilter={roleFilter}
                         />
@@ -2876,9 +2970,12 @@ export default function CFAssessmentManager() {
                     <SectionHeader title="Age-Specific Measures" color="blue" icon={Baby} />
                     <AssessmentRow
                       item={{ id: 'se', name: seTool.name, full: 'Social-Emotional Development', entry: 'ASD', role: 'FRP' }}
-                      isChecked={!!client.assessments?.base_se}
-                      dateCompleted={client.assessments?.base_se}
+                      assessmentKey="base_se"
+                      isChecked={isAssessmentComplete(getAssessment(client, 'base_se'))}
+                      dateCompleted={getAssessmentDate(getAssessment(client, 'base_se'))}
+                      isUploaded={isAssessmentUploaded(getAssessment(client, 'base_se'))}
                       onToggle={() => toggleAssessment('base_se')}
+                      onToggleUpload={() => toggleUpload('base_se')}
                       roleFilter={roleFilter}
                       showNote={seTool.continuity ? 'Continuity Rule: Started under 12mo, staying with ASQ:SE-2 throughout service' : null}
                     />
@@ -2886,9 +2983,12 @@ export default function CFAssessmentManager() {
                       <>
                         <AssessmentRow
                           item={{ id: 'mchat', name: 'M-CHAT-R/F', full: 'Autism Screening (16-30 months)', entry: 'ASD', role: 'FRP', cutoff: 'mchat' }}
-                          isChecked={!!client.assessments?.base_mchat}
-                          dateCompleted={client.assessments?.base_mchat}
+                          assessmentKey="base_mchat"
+                          isChecked={isAssessmentComplete(getAssessment(client, 'base_mchat'))}
+                          dateCompleted={getAssessmentDate(getAssessment(client, 'base_mchat'))}
+                          isUploaded={isAssessmentUploaded(getAssessment(client, 'base_mchat'))}
                           onToggle={() => toggleAssessment('base_mchat')}
+                          onToggleUpload={() => toggleUpload('base_mchat')}
                           roleFilter={roleFilter}
                         />
                         {client.mchatHighRisk && (

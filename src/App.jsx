@@ -219,6 +219,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Sabrina Crain",
     notes: "",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-05-02",
       base_sniff: "2025-05-28",
@@ -247,6 +249,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Amanda Haney",
     notes: "Working on sensory regulation strategies",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-09-15",
       base_sniff: "2025-09-11",
@@ -273,6 +277,8 @@ const INITIAL_CLIENTS = [
     caregiver: "Rhonda Proffitt",
     linkedId: "kayden-proffitt",
     notes: "Twin - sibling case with Kayden",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-12-29",
       base_pq: "2025-12-15"
@@ -288,6 +294,8 @@ const INITIAL_CLIENTS = [
     caregiver: "Rhonda Proffitt",
     linkedId: "gracie-proffitt",
     notes: "Twin - sibling case with Gracie",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-12-29",
       base_asq3: "2026-01-05",
@@ -305,6 +313,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Nikiria Harper",
     notes: "New intake - building rapport",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-12-01"
     }
@@ -318,6 +328,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Hillary Ridenhour",
     notes: "",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-12-31",
       base_sniff: "2025-12-29",
@@ -333,6 +345,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Alyssa Brickett",
     notes: "Early engagement phase",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_pq: "2025-12-16"
     }
@@ -575,20 +589,32 @@ const checkAssessmentDependencies = (client, assessmentKey) => {
 const calculatePhaseProgress = (client, phase) => {
   let total = 0;
   let completed = 0;
+  const age = getAgeInMonths(client.dob, client.admitDate);
   
   if (phase === 'baseline') {
     const baselineItems = BASELINE_PROTOCOL.flatMap(w => w.items);
     baselineItems.forEach(item => {
+      // Skip asq3 and mchat from protocol - they're handled separately as age-specific
+      if (item.id === 'asq3' || item.id === 'mchat') return;
       total++;
       if (client.assessments?.[`base_${item.id}`]) completed++;
     });
-    // Add age-specific items
-    const age = getAgeInMonths(client.dob, client.admitDate);
+    // Add age-specific items (only for non-pregnant)
     if (client.type !== 'pregnant') {
-      if (isASQ3Applicable(age)) { total++; if (client.assessments?.base_asq3) completed++; }
-      if (isMCHATRequired(age)) { total++; if (client.assessments?.base_mchat) completed++; }
+      // ASQ-3 only counts if age-applicable
+      if (isASQ3Applicable(age)) { 
+        total++; 
+        if (client.assessments?.base_asq3) completed++; 
+      }
+      // M-CHAT only counts if age-required
+      if (isMCHATRequired(age)) { 
+        total++; 
+        if (client.assessments?.base_mchat) completed++; 
+      }
+      // SE tool
       const seTool = getSETool(getAgeInMonths(client.dob), age, client.type);
-      total++; if (client.assessments?.[`base_${seTool.id}`]) completed++;
+      total++; 
+      if (client.assessments?.base_se) completed++;
     }
   } else if (phase === '6month') {
     FOLLOWUP_PROTOCOL.forEach(item => {
@@ -596,9 +622,9 @@ const calculatePhaseProgress = (client, phase) => {
       if (client.assessments?.[`6mo_${item.id}`]) completed++;
     });
     if (client.type !== 'pregnant') {
-      const age = getAgeInMonths(client.dob);
-      const seTool = getSETool(age, getAgeInMonths(client.dob, client.admitDate), client.type);
-      total++; if (client.assessments?.[`6mo_${seTool.id}`]) completed++;
+      // SE tool for 6-month
+      total++; 
+      if (client.assessments?.['6mo_se']) completed++;
     }
   } else if (phase === 'discharge') {
     DISCHARGE_ONLY.forEach(item => {
@@ -610,9 +636,9 @@ const calculatePhaseProgress = (client, phase) => {
       if (client.assessments?.[`dc_${item.id}`]) completed++;
     });
     if (client.type !== 'pregnant') {
-      const age = getAgeInMonths(client.dob);
-      const seTool = getSETool(age, getAgeInMonths(client.dob, client.admitDate), client.type);
-      total++; if (client.assessments?.[`dc_${seTool.id}`]) completed++;
+      // SE tool for discharge
+      total++; 
+      if (client.assessments?.['dc_se']) completed++;
     }
   }
   
@@ -1868,24 +1894,74 @@ export default function CFAssessmentManager() {
     }
   }, [activityLog]);
 
-  // Helper: Add activity to log
-  const addActivity = useCallback((type, description, data = null) => {
+  // Helper: Add activity to log (with previous state for undo)
+  const addActivity = useCallback((type, description, data = null, previousState = null) => {
     const activity = {
       id: Date.now(),
       type,
       description,
       data,
+      previousState, // Store previous state for undo
       timestamp: new Date().toISOString()
     };
     setActivityLog(prev => [...prev.slice(-9), activity]); // Keep last 10
   }, []);
 
-  // Helper: Undo last activity
-  const undoLastActivity = useCallback(() => {
+  // Helper: Undo last activity - restores previous state
+  const undoLastActivity = useCallback(async () => {
     if (activityLog.length === 0) return;
+    
     const lastActivity = activityLog[activityLog.length - 1];
-    // Implementation depends on activity type - for now just remove from log
-    setActivityLog(prev => prev.slice(0, -1));
+    const { type, data, previousState } = lastActivity;
+    
+    try {
+      switch (type) {
+        case ACTIVITY_TYPES.CLIENT_ADDED:
+          // Undo add = delete the client
+          if (data?.clientId) {
+            await api.deleteClient(data.clientId);
+            setClients(prev => prev.filter(c => c.id !== data.clientId));
+          }
+          break;
+          
+        case ACTIVITY_TYPES.CLIENT_UPDATED:
+        case ACTIVITY_TYPES.CLIENT_STATUS_CHANGED:
+          // Undo update = restore previous client state
+          if (previousState?.client) {
+            const savedClient = await api.saveClient(previousState.client);
+            setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
+          }
+          break;
+          
+        case ACTIVITY_TYPES.CLIENT_DELETED:
+          // Undo delete = restore the client
+          if (previousState?.client) {
+            const savedClient = await api.saveClient(previousState.client);
+            setClients(prev => [...prev, savedClient]);
+          }
+          break;
+          
+        case ACTIVITY_TYPES.ASSESSMENT_COMPLETED:
+        case ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED:
+          // Undo assessment toggle = restore previous client state
+          if (previousState?.client) {
+            const savedClient = await api.saveClient(previousState.client);
+            setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
+          }
+          break;
+          
+        default:
+          // For unsupported types, just remove from log
+          break;
+      }
+      
+      // Only remove the activity from log if undo succeeded
+      setActivityLog(prev => prev.slice(0, -1));
+    } catch (error) {
+      console.error('Failed to undo activity:', error);
+      alert('Failed to undo action. Please try again.');
+      // Don't remove activity from log if undo failed
+    }
   }, [activityLog]);
 
   // Save to localStorage as backup whenever clients change
@@ -1906,7 +1982,7 @@ export default function CFAssessmentManager() {
     try {
       const savedClient = await api.saveClient(newClient);
       setClients([...clients, savedClient]);
-      addActivity(ACTIVITY_TYPES.CLIENT_ADDED, `Added client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id });
+      addActivity(ACTIVITY_TYPES.CLIENT_ADDED, `Added client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id }, null);
     } catch (error) {
       console.error('Failed to save client:', error);
       alert('Failed to save client. Please try again.');
@@ -1921,13 +1997,14 @@ export default function CFAssessmentManager() {
       setIsEditModalOpen(false);
       setEditingClient(null);
       
-      // Log status change if status changed
+      // Log status change if status changed (with previous state for undo)
       if (oldClient && oldClient.status !== savedClient.status) {
         addActivity(ACTIVITY_TYPES.CLIENT_STATUS_CHANGED, 
           `Changed ${savedClient.nickname || savedClient.name} status to ${CLIENT_STATUSES[savedClient.status]?.label}`, 
-          { clientId: savedClient.id, oldStatus: oldClient.status, newStatus: savedClient.status });
+          { clientId: savedClient.id, oldStatus: oldClient.status, newStatus: savedClient.status },
+          { client: oldClient });
       } else {
-        addActivity(ACTIVITY_TYPES.CLIENT_UPDATED, `Updated client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id });
+        addActivity(ACTIVITY_TYPES.CLIENT_UPDATED, `Updated client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id }, { client: oldClient });
       }
     } catch (error) {
       console.error('Failed to update client:', error);
@@ -1951,7 +2028,7 @@ export default function CFAssessmentManager() {
   };
 
   const deleteClient = async (id) => {
-    const client = clients.find(c => c.id === id);
+    const clientToDelete = clients.find(c => c.id === id);
     if (window.confirm("Remove this family from caseload?")) {
       try {
         await api.deleteClient(id);
@@ -1960,8 +2037,8 @@ export default function CFAssessmentManager() {
           setView('list');
           setActiveId(null);
         }
-        if (client) {
-          addActivity(ACTIVITY_TYPES.CLIENT_DELETED, `Deleted client: ${client.nickname || client.name}`, { clientId: id });
+        if (clientToDelete) {
+          addActivity(ACTIVITY_TYPES.CLIENT_DELETED, `Deleted client: ${clientToDelete.nickname || clientToDelete.name}`, { clientId: id }, { client: clientToDelete });
         }
       } catch (error) {
         console.error('Failed to delete client:', error);
@@ -2007,15 +2084,16 @@ export default function CFAssessmentManager() {
     }
 
     // Save and update local state with the saved version (includes updatedAt)
+    const previousClient = client; // Store for undo
     try {
       const savedClient = await api.saveClient(updatedClient);
       setClients(clients.map(c => c.id === activeId ? savedClient : c));
       
-      // Log activity
+      // Log activity with previous state for undo
       if (isCurrentlyDone) {
-        addActivity(ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED, `Uncompleted ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key });
+        addActivity(ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED, `Uncompleted ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key }, { client: previousClient });
       } else {
-        addActivity(ACTIVITY_TYPES.ASSESSMENT_COMPLETED, `Completed ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key });
+        addActivity(ACTIVITY_TYPES.ASSESSMENT_COMPLETED, `Completed ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key }, { client: previousClient });
       }
     } catch (error) {
       console.error('Failed to save assessment:', error);

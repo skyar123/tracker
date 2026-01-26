@@ -473,15 +473,15 @@ const getPhaseInfo = (client, days) => {
 
 const isBaselineComplete = (client) => {
   const required = ['intake', 'sniff', 'pq', 'asq3', 'psi', 'cesdr', 'hope', 'tesi', 'lscr', 'pcl5', 'ccis', 'se'];
-  const age = getAgeInMonths(client.dob, client.admitDate);
+  const age = getAgeInMonths(client.dob || client.child_dob, client.admitDate || client.intake_date);
   if (isMCHATRequired(age)) required.push('mchat');
   
-  return required.every(id => client.assessments?.[`base_${id}`]);
+  return required.every(id => isAssessmentComplete(getAssessment(client, `base_${id}`)));
 };
 
 const is6MonthComplete = (client) => {
   const required = ['asq3', 'ccis', 'psi', 'cesdr', 'pcl5', 'se'];
-  return required.every(id => client.assessments?.[`6mo_${id}`]);
+  return required.every(id => isAssessmentComplete(getAssessment(client, `6mo_${id}`)));
 };
 
 const calculateWorkload = (client) => {
@@ -496,7 +496,7 @@ const calculateWorkload = (client) => {
   
   const countItem = (item, prefix) => {
     const key = `${prefix}_${item.id}`;
-    if (!client.assessments?.[key]) {
+    if (!isAssessmentComplete(getAssessment(client, key))) {
       if (item.role === 'CLINICIAN') clinicianLeft++;
       else if (item.role === 'FRP') frpLeft++;
       else if (item.role === 'SHARED') sharedLeft++;
@@ -506,12 +506,12 @@ const calculateWorkload = (client) => {
   if (phase.id === 'baseline') {
     BASELINE_PROTOCOL.forEach(week => week.items.forEach(item => countItem(item, 'base')));
     // SE tool
-    if (!client.assessments?.base_se) frpLeft++;
+    if (!isAssessmentComplete(getAssessment(client, 'base_se'))) frpLeft++;
     // M-CHAT
-    if (isMCHATRequired(ageAtAdmit) && !client.assessments?.base_mchat) frpLeft++;
+    if (isMCHATRequired(ageAtAdmit) && !isAssessmentComplete(getAssessment(client, 'base_mchat'))) frpLeft++;
   } else if (phase.id === 'sixMonth') {
     FOLLOWUP_PROTOCOL.forEach(item => countItem(item, '6mo'));
-    if (!client.assessments?.['6mo_se']) frpLeft++;
+    if (!isAssessmentComplete(getAssessment(client, '6mo_se'))) frpLeft++;
   } else if (phase.id === 'q1' || phase.id === 'q3') {
     const prefix = phase.id;
     QUARTERLY_PROTOCOL.forEach(item => countItem(item, prefix));
@@ -592,7 +592,7 @@ const checkAssessmentDependencies = (client, assessmentKey) => {
   const dependencies = ASSESSMENT_DEPENDENCIES[assessmentKey];
   if (!dependencies) return { met: true, missing: [] };
   
-  const missing = dependencies.filter(dep => !client.assessments?.[dep]);
+  const missing = dependencies.filter(dep => !isAssessmentComplete(getAssessment(client, dep)));
   return { met: missing.length === 0, missing };
 };
 
@@ -600,7 +600,7 @@ const checkAssessmentDependencies = (client, assessmentKey) => {
 const calculatePhaseProgress = (client, phase) => {
   let total = 0;
   let completed = 0;
-  const age = getAgeInMonths(client.dob, client.admitDate);
+  const age = getAgeInMonths(client.dob || client.child_dob, client.admitDate || client.intake_date);
   
   if (phase === 'baseline') {
     const baselineItems = BASELINE_PROTOCOL.flatMap(w => w.items);
@@ -608,48 +608,48 @@ const calculatePhaseProgress = (client, phase) => {
       // Skip asq3 and mchat from protocol - they're handled separately as age-specific
       if (item.id === 'asq3' || item.id === 'mchat') return;
       total++;
-      if (client.assessments?.[`base_${item.id}`]) completed++;
+      if (isAssessmentComplete(getAssessment(client, `base_${item.id}`))) completed++;
     });
     // Add age-specific items (only for non-pregnant)
     if (client.type !== 'pregnant') {
       // ASQ-3 only counts if age-applicable
       if (isASQ3Applicable(age)) { 
         total++; 
-        if (client.assessments?.base_asq3) completed++; 
+        if (isAssessmentComplete(getAssessment(client, 'base_asq3'))) completed++; 
       }
       // M-CHAT only counts if age-required
       if (isMCHATRequired(age)) { 
         total++; 
-        if (client.assessments?.base_mchat) completed++; 
+        if (isAssessmentComplete(getAssessment(client, 'base_mchat'))) completed++; 
       }
       // SE tool
-      const seTool = getSETool(getAgeInMonths(client.dob), age, client.type);
+      const seTool = getSETool(getAgeInMonths(client.dob || client.child_dob), age, client.type);
       total++; 
-      if (client.assessments?.base_se) completed++;
+      if (isAssessmentComplete(getAssessment(client, 'base_se'))) completed++;
     }
   } else if (phase === '6month') {
     FOLLOWUP_PROTOCOL.forEach(item => {
       total++;
-      if (client.assessments?.[`6mo_${item.id}`]) completed++;
+      if (isAssessmentComplete(getAssessment(client, `6mo_${item.id}`))) completed++;
     });
     if (client.type !== 'pregnant') {
       // SE tool for 6-month
       total++; 
-      if (client.assessments?.['6mo_se']) completed++;
+      if (isAssessmentComplete(getAssessment(client, '6mo_se'))) completed++;
     }
   } else if (phase === 'discharge') {
     DISCHARGE_ONLY.forEach(item => {
       total++;
-      if (client.assessments?.[`dc_${item.id}`]) completed++;
+      if (isAssessmentComplete(getAssessment(client, `dc_${item.id}`))) completed++;
     });
     FOLLOWUP_PROTOCOL.forEach(item => {
       total++;
-      if (client.assessments?.[`dc_${item.id}`]) completed++;
+      if (isAssessmentComplete(getAssessment(client, `dc_${item.id}`))) completed++;
     });
     if (client.type !== 'pregnant') {
       // SE tool for discharge
       total++; 
-      if (client.assessments?.['dc_se']) completed++;
+      if (isAssessmentComplete(getAssessment(client, 'dc_se'))) completed++;
     }
   }
   
@@ -1435,15 +1435,32 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
   useEffect(() => {
     if (client) {
       setData({
-        name: client.name || '',
+        name: client.name || client.child_name || '',
         nickname: client.nickname || '',
-        dob: client.dob || '',
-        admitDate: client.admitDate || '',
+        dob: client.dob || client.child_dob || '',
+        admitDate: client.admitDate || client.intake_date || '',
         type: client.type || 'child',
-        caregiver: client.caregiver || '',
+        caregiver: client.caregiver || client.caregiver_name || '',
+        caregiver_dob: client.caregiver_dob || client.customFields?.caregiverDob || '',
         notes: client.notes || '',
         status: client.status || 'ACTIVE',
-        customFields: client.customFields || {}
+        customFields: client.customFields || {},
+        // New fields
+        initial_cca_date: client.initial_cca_date || client.customFields?.initialCcaDate || '',
+        sixty_day_cca_date: client.sixty_day_cca_date || client.customFields?.sixtyDayCcaDate || '',
+        initial_tx_plan: client.initial_tx_plan || client.customFields?.initialTxPlan || '',
+        sixty_day_tx_plan: client.sixty_day_tx_plan || client.customFields?.sixtyDayTxPlan || '',
+        ninety_day_tx_plan: client.ninety_day_tx_plan || client.customFields?.ninetyDayTxPlan || '',
+        next_tx_plan: client.next_tx_plan || client.customFields?.nextTxPlan || '',
+        insurance_submitted: client.insurance_submitted || client.customFields?.insuranceSubmitted || '',
+        insurance_accepted: client.insurance_accepted || client.customFields?.insuranceAccepted || '',
+        insurance_type: client.insurance_type || client.customFields?.insuranceType || '',
+        auth_submitted: client.auth_submitted || client.customFields?.authSubmitted || '',
+        auth_accepted: client.auth_accepted || client.customFields?.authAccepted || '',
+        auth_expires: client.auth_expires || client.customFields?.authExpires || '',
+        has_crisis_plan: client.has_crisis_plan || client.customFields?.hasCrisisPlan === 'Yes' || false,
+        diagnosis_code: client.diagnosis_code || client.customFields?.diagnosisCode || '',
+        diagnosis: client.diagnosis || client.customFields?.diagnosis || ''
       });
     }
   }, [client]);
@@ -1551,6 +1568,44 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Caregiver DOB</label>
+              <input 
+                type="date"
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.caregiver_dob} 
+                onChange={e => setData({...data, caregiver_dob: e.target.value})}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                  checked={data.has_crisis_plan}
+                  onChange={e => setData({...data, has_crisis_plan: e.target.checked})}
+                />
+                <span className="text-sm font-medium text-slate-700">Has Crisis Plan</span>
+              </label>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Diagnosis Code</label>
+              <input 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.diagnosis_code} 
+                onChange={e => setData({...data, diagnosis_code: e.target.value})}
+                placeholder="e.g., F84.0"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Diagnosis</label>
+              <input 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.diagnosis} 
+                onChange={e => setData({...data, diagnosis: e.target.value})}
+                placeholder="e.g., Autism"
+              />
+            </div>
             <div className="col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notes</label>
               <textarea 
@@ -1561,6 +1616,155 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
                 placeholder="Any notes..."
               />
             </div>
+            
+            {/* Advanced Fields Toggle */}
+            <div className="col-span-2 border-t pt-4">
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="w-full flex items-center justify-between text-sm font-medium text-slate-600 hover:text-slate-800"
+              >
+                <span>Advanced Fields (Treatment Plans, CCA Dates, Insurance)</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+            
+            {showAdvanced && (
+              <>
+                {/* Treatment Plan Dates */}
+                <div className="col-span-2 border-t pt-4">
+                  <h3 className="text-sm font-bold text-slate-700 mb-3">Treatment Plan Dates</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Initial TX Plan</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.initial_tx_plan} 
+                        onChange={e => setData({...data, initial_tx_plan: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">60-Day TX Plan</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.sixty_day_tx_plan} 
+                        onChange={e => setData({...data, sixty_day_tx_plan: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">90-Day TX Plan</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.ninety_day_tx_plan} 
+                        onChange={e => setData({...data, ninety_day_tx_plan: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Next TX Plan</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.next_tx_plan} 
+                        onChange={e => setData({...data, next_tx_plan: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* CCA Dates */}
+                <div className="col-span-2 border-t pt-4">
+                  <h3 className="text-sm font-bold text-slate-700 mb-3">CCA Dates</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Initial CCA</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.initial_cca_date} 
+                        onChange={e => setData({...data, initial_cca_date: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">60-Day CCA</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.sixty_day_cca_date} 
+                        onChange={e => setData({...data, sixty_day_cca_date: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Insurance & Authorization */}
+                <div className="col-span-2 border-t pt-4">
+                  <h3 className="text-sm font-bold text-slate-700 mb-3">Insurance & Authorization</h3>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Insurance Submitted</label>
+                        <input 
+                          type="date"
+                          className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                          value={data.insurance_submitted} 
+                          onChange={e => setData({...data, insurance_submitted: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Insurance Accepted</label>
+                        <input 
+                          type="date"
+                          className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                          value={data.insurance_accepted} 
+                          onChange={e => setData({...data, insurance_accepted: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Insurance Type</label>
+                      <input 
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.insurance_type} 
+                        onChange={e => setData({...data, insurance_type: e.target.value})}
+                        placeholder="e.g., KP, Medicaid"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Auth Submitted</label>
+                        <input 
+                          type="date"
+                          className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                          value={data.auth_submitted} 
+                          onChange={e => setData({...data, auth_submitted: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Auth Accepted</label>
+                        <input 
+                          type="date"
+                          className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                          value={data.auth_accepted} 
+                          onChange={e => setData({...data, auth_accepted: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Auth Expires</label>
+                      <input 
+                        type="date"
+                        className="w-full border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                        value={data.auth_expires} 
+                        onChange={e => setData({...data, auth_expires: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+            
             <div className="col-span-2 border-t pt-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Custom Fields</label>
               <div className="space-y-2 mb-3">
@@ -1839,7 +2043,7 @@ const CalendarView = ({ clients, onClientClick }) => {
     const dates = {};
     clients.forEach(client => {
       const workload = calculateWorkload(client);
-      const dueDate = addDays(client.admitDate, workload.phase.dueDays);
+      const dueDate = addDays(client.admitDate || client.intake_date, workload.phase.dueDays);
       const dateKey = dueDate;
       
       if (!dates[dateKey]) {
@@ -2698,9 +2902,9 @@ export default function CFAssessmentManager() {
   const renderDetail = () => {
     if (!client) return null;
 
-    const days = getDaysInService(client.admitDate);
-    const age = getAgeInMonths(client.dob);
-    const ageAtAdmit = getAgeInMonths(client.dob, client.admitDate);
+    const days = getDaysInService(client.admitDate || client.intake_date);
+    const age = getAgeInMonths(client.dob || client.child_dob);
+    const ageAtAdmit = getAgeInMonths(client.dob || client.child_dob, client.admitDate || client.intake_date);
     const workload = calculateWorkload(client);
     const { phase } = workload;
 
@@ -2943,7 +3147,7 @@ export default function CFAssessmentManager() {
                     <div key={week.week}>
                       <SectionHeader 
                         title={`Week ${week.week}: ${week.title}`}
-                        color={weekOverdue && !week.items.every(i => client.assessments?.[`base_${i.id}`]) ? 'amber' : 'slate'}
+                        color={weekOverdue && !week.items.every(i => isAssessmentComplete(getAssessment(client, `base_${i.id}`))) ? 'amber' : 'slate'}
                         icon={week.week === 1 ? BookOpen : week.week === 2 ? Activity : week.week === 3 ? AlertCircle : Users}
                       />
                       {week.items.map(item => (
@@ -2994,9 +3198,12 @@ export default function CFAssessmentManager() {
                         {client.mchatHighRisk && (
                           <AssessmentRow
                             item={{ id: 'mchat_fu', name: 'M-CHAT Follow-Up Interview', full: 'Required for score ≥3 — complete before referral', entry: 'ASD', role: 'FRP', critical: true }}
-                            isChecked={!!client.assessments?.base_mchat_fu}
-                            dateCompleted={client.assessments?.base_mchat_fu}
+                            assessmentKey="base_mchat_fu"
+                            isChecked={isAssessmentComplete(getAssessment(client, 'base_mchat_fu'))}
+                            dateCompleted={getAssessmentDate(getAssessment(client, 'base_mchat_fu'))}
+                            isUploaded={isAssessmentUploaded(getAssessment(client, 'base_mchat_fu'))}
                             onToggle={() => toggleAssessment('base_mchat_fu')}
+                            onToggleUpload={() => toggleUpload('base_mchat_fu')}
                             roleFilter={roleFilter}
                             showNote="Score ≥8 = High Risk: also complete Sensory Profile and make immediate referral"
                           />
@@ -3010,16 +3217,22 @@ export default function CFAssessmentManager() {
                 <SectionHeader title="Optional / As Indicated" color="slate" icon={MoreHorizontal} />
                 <AssessmentRow
                   item={{ id: 'sensory', name: sensoryTool.name, full: sensoryTool.full + ' — if sensory concerns or M-CHAT ≥3', entry: 'ASD', role: 'FRP' }}
-                  isChecked={!!client.assessments?.base_sensory}
-                  dateCompleted={client.assessments?.base_sensory}
+                  assessmentKey="base_sensory"
+                  isChecked={isAssessmentComplete(getAssessment(client, 'base_sensory'))}
+                  dateCompleted={getAssessmentDate(getAssessment(client, 'base_sensory'))}
+                  isUploaded={isAssessmentUploaded(getAssessment(client, 'base_sensory'))}
                   onToggle={() => toggleAssessment('base_sensory')}
+                  onToggleUpload={() => toggleUpload('base_sensory')}
                   roleFilter={roleFilter}
                 />
                 <AssessmentRow
                   item={{ id: 'epds', name: 'EPDS', full: 'Edinburgh Postnatal Depression — within 6-12 weeks postpartum', entry: 'CFCR', role: 'CLINICIAN', cutoff: 'epds' }}
-                  isChecked={!!client.assessments?.base_epds}
-                  dateCompleted={client.assessments?.base_epds}
+                  assessmentKey="base_epds"
+                  isChecked={isAssessmentComplete(getAssessment(client, 'base_epds'))}
+                  dateCompleted={getAssessmentDate(getAssessment(client, 'base_epds'))}
+                  isUploaded={isAssessmentUploaded(getAssessment(client, 'base_epds'))}
                   onToggle={() => toggleAssessment('base_epds')}
+                  onToggleUpload={() => toggleUpload('base_epds')}
                   roleFilter={roleFilter}
                 />
               </div>
@@ -3041,8 +3254,8 @@ export default function CFAssessmentManager() {
               {[1, 3].map(q => {
                 const qDay = q === 1 ? 90 : 270;
                 const prefix = `q${q}_`;
-                const sniffDone = !!client.assessments?.[`${prefix}sniff`];
-                const txDone = !!client.assessments?.[`${prefix}tx`];
+                const sniffDone = isAssessmentComplete(getAssessment(client, `${prefix}sniff`));
+                const txDone = isAssessmentComplete(getAssessment(client, `${prefix}tx`));
                 const isDue = days >= qDay - 14;
                 const isComplete = sniffDone && txDone;
 
@@ -3062,15 +3275,15 @@ export default function CFAssessmentManager() {
                           key={item.id}
                           onClick={() => toggleAssessment(`${prefix}${item.id}`)}
                           className={`w-full p-3 rounded-xl border-2 flex items-center gap-3 transition-all ${
-                            client.assessments?.[`${prefix}${item.id}`]
+                            isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`))
                               ? 'bg-teal-50 border-teal-300 text-teal-800'
                               : 'bg-white border-slate-200 text-slate-600 hover:border-teal-300'
                           }`}
                         >
                           <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                            client.assessments?.[`${prefix}${item.id}`] ? 'bg-teal-500 border-teal-500' : 'border-slate-300'
+                            isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) ? 'bg-teal-500 border-teal-500' : 'border-slate-300'
                           }`}>
-                            {client.assessments?.[`${prefix}${item.id}`] && <CheckCircle className="w-3 h-3 text-white" />}
+                            {isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) && <CheckCircle className="w-3 h-3 text-white" />}
                           </div>
                           <div className="flex-1 text-left">
                             <span className="font-semibold text-sm">{item.name}</span>
@@ -3110,18 +3323,24 @@ export default function CFAssessmentManager() {
                   <AssessmentRow
                     key={item.id}
                     item={item}
-                    isChecked={!!client.assessments?.[`6mo_${item.id}`]}
-                    dateCompleted={client.assessments?.[`6mo_${item.id}`]}
+                    assessmentKey={`6mo_${item.id}`}
+                    isChecked={isAssessmentComplete(getAssessment(client, `6mo_${item.id}`))}
+                    dateCompleted={getAssessmentDate(getAssessment(client, `6mo_${item.id}`))}
+                    isUploaded={isAssessmentUploaded(getAssessment(client, `6mo_${item.id}`))}
                     onToggle={() => toggleAssessment(`6mo_${item.id}`)}
+                    onToggleUpload={() => toggleUpload(`6mo_${item.id}`)}
                     roleFilter={roleFilter}
                   />
                 ))}
 
                 <AssessmentRow
                   item={{ id: 'se', name: seTool.name, full: 'Social-Emotional (use current age)', entry: 'ASD', role: 'FRP' }}
-                  isChecked={!!client.assessments?.['6mo_se']}
-                  dateCompleted={client.assessments?.['6mo_se']}
+                  assessmentKey="6mo_se"
+                  isChecked={isAssessmentComplete(getAssessment(client, '6mo_se'))}
+                  dateCompleted={getAssessmentDate(getAssessment(client, '6mo_se'))}
+                  isUploaded={isAssessmentUploaded(getAssessment(client, '6mo_se'))}
                   onToggle={() => toggleAssessment('6mo_se')}
+                  onToggleUpload={() => toggleUpload('6mo_se')}
                   roleFilter={roleFilter}
                   showNote={`Current age: ${age}mo → ${seTool.name}`}
                 />
@@ -3155,9 +3374,12 @@ export default function CFAssessmentManager() {
                   <AssessmentRow
                     key={item.id}
                     item={item}
-                    isChecked={!!client.assessments?.[`dc_${item.id}`]}
-                    dateCompleted={client.assessments?.[`dc_${item.id}`]}
+                    assessmentKey={`dc_${item.id}`}
+                    isChecked={isAssessmentComplete(getAssessment(client, `dc_${item.id}`))}
+                    dateCompleted={getAssessmentDate(getAssessment(client, `dc_${item.id}`))}
+                    isUploaded={isAssessmentUploaded(getAssessment(client, `dc_${item.id}`))}
                     onToggle={() => toggleAssessment(`dc_${item.id}`)}
+                    onToggleUpload={() => toggleUpload(`dc_${item.id}`)}
                     roleFilter={roleFilter}
                   />
                 ))}
@@ -3167,18 +3389,24 @@ export default function CFAssessmentManager() {
                   <AssessmentRow
                     key={item.id}
                     item={item}
-                    isChecked={!!client.assessments?.[`dc_${item.id}`]}
-                    dateCompleted={client.assessments?.[`dc_${item.id}`]}
+                    assessmentKey={`dc_${item.id}`}
+                    isChecked={isAssessmentComplete(getAssessment(client, `dc_${item.id}`))}
+                    dateCompleted={getAssessmentDate(getAssessment(client, `dc_${item.id}`))}
+                    isUploaded={isAssessmentUploaded(getAssessment(client, `dc_${item.id}`))}
                     onToggle={() => toggleAssessment(`dc_${item.id}`)}
+                    onToggleUpload={() => toggleUpload(`dc_${item.id}`)}
                     roleFilter={roleFilter}
                   />
                 ))}
 
                 <AssessmentRow
                   item={{ id: 'se', name: seTool.name, full: 'Social-Emotional (use current age)', entry: 'ASD', role: 'FRP' }}
-                  isChecked={!!client.assessments?.['dc_se']}
-                  dateCompleted={client.assessments?.['dc_se']}
+                  assessmentKey="dc_se"
+                  isChecked={isAssessmentComplete(getAssessment(client, 'dc_se'))}
+                  dateCompleted={getAssessmentDate(getAssessment(client, 'dc_se'))}
+                  isUploaded={isAssessmentUploaded(getAssessment(client, 'dc_se'))}
                   onToggle={() => toggleAssessment('dc_se')}
+                  onToggleUpload={() => toggleUpload('dc_se')}
                   roleFilter={roleFilter}
                   showNote={`Current age: ${age}mo → ${seTool.name}`}
                 />

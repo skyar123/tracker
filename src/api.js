@@ -1,44 +1,38 @@
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  orderBy,
-  query,
-  setDoc,
-  writeBatch,
-} from 'firebase/firestore';
+// Simple localStorage-based API - no external dependencies
 
-import { db } from './firebase.js';
-
-const clientsCollection = collection(db, 'clients');
+const STORAGE_KEY = 'cf_caseload_v5';
 
 export const api = {
   async getClients() {
     try {
-      const snapshot = await getDocs(query(clientsCollection, orderBy('admitDate', 'desc')));
-      return snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      return [];
     } catch (error) {
-      console.error('Error fetching clients:', error);
-      const saved = localStorage.getItem('cf_caseload_v5');
-      return saved ? JSON.parse(saved) : [];
+      console.error('Error loading clients:', error);
+      return [];
     }
   },
 
   async saveClient(client) {
     try {
-      const clientRef = doc(db, 'clients', client.id);
-      await setDoc(
-        clientRef,
-        {
-          ...client,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      const clients = await this.getClients();
+      const existingIndex = clients.findIndex(c => c.id === client.id);
+      
+      const clientToSave = {
+        ...client,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (existingIndex >= 0) {
+        clients[existingIndex] = clientToSave;
+      } else {
+        clients.push(clientToSave);
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
       return client;
     } catch (error) {
       console.error('Error saving client:', error);
@@ -48,8 +42,9 @@ export const api = {
 
   async deleteClient(id) {
     try {
-      const clientRef = doc(db, 'clients', id);
-      await deleteDoc(clientRef);
+      const clients = await this.getClients();
+      const filtered = clients.filter(c => c.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
       return { id };
     } catch (error) {
       console.error('Error deleting client:', error);
@@ -59,19 +54,7 @@ export const api = {
 
   async migrateData(clients) {
     try {
-      const batch = writeBatch(db);
-      clients.forEach((client) => {
-        const clientRef = doc(db, 'clients', client.id);
-        batch.set(
-          clientRef,
-          {
-            ...client,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      });
-      await batch.commit();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
       return {
         imported: clients.length,
         total: clients.length,

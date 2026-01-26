@@ -47,4 +47,4 @@ This project is configured for Netlify deployment. The build command is `npm run
 
 ## Data Storage
 
-Data is stored in Firebase Firestore for real-time syncing across devices. Configure Firebase with the values in `.env.example` or the Netlify environment variables.
+Data is stored locally in the browser using localStorage. All caseload data persists in your browser and can be exported/imported using the Backup feature in the app.

@@ -1482,7 +1482,6 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
 export default function CFAssessmentManager() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
   const [view, setView] = useState('list');
   const [activeId, setActiveId] = useState(null);
   const [activePhase, setActivePhase] = useState('baseline');
@@ -1495,28 +1494,20 @@ export default function CFAssessmentManager() {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
 
-  // Load clients from database on mount
+  // Load clients from localStorage on mount
   useEffect(() => {
     const loadClients = async () => {
       try {
         setLoading(true);
         const data = await api.getClients();
-        setClients(data);
-        // Also save to localStorage as backup
-        localStorage.setItem('cf_caseload_v5', JSON.stringify(data));
-      } catch (error) {
-        console.error('Failed to load clients from database:', error);
-        // Fall back to localStorage
-        try {
-          const saved = localStorage.getItem('cf_caseload_v5');
-          if (saved) {
-            setClients(JSON.parse(saved));
-          } else {
-            setClients(INITIAL_CLIENTS);
-          }
-        } catch {
+        if (data.length === 0) {
           setClients(INITIAL_CLIENTS);
+        } else {
+          setClients(data);
         }
+      } catch (error) {
+        console.error('Failed to load clients:', error);
+        setClients(INITIAL_CLIENTS);
       } finally {
         setLoading(false);
       }
@@ -1541,40 +1532,23 @@ export default function CFAssessmentManager() {
   // Actions
   const addClient = async (newClient) => {
     try {
-      setSyncStatus('syncing');
-      // Save to database
       await api.saveClient(newClient);
-      // Update local state
       setClients([...clients, newClient]);
-      setSyncStatus('synced');
     } catch (error) {
       console.error('Failed to save client:', error);
-      setSyncStatus('error');
-      // Still update local state as fallback
-      setClients([...clients, newClient]);
-      // Show error to user (optional)
-      alert('Failed to save to database. Changes saved locally only.');
+      alert('Failed to save client. Please try again.');
     }
   };
 
   const updateClient = async (updatedClient) => {
     try {
-      setSyncStatus('syncing');
-      // Save to database
       await api.saveClient(updatedClient);
-      // Update local state
       setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
-      setSyncStatus('synced');
       setIsEditModalOpen(false);
       setEditingClient(null);
     } catch (error) {
       console.error('Failed to update client:', error);
-      setSyncStatus('error');
-      // Still update local state as fallback
-      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
-      setIsEditModalOpen(false);
-      setEditingClient(null);
-      alert('Failed to save to database. Changes saved locally only.');
+      alert('Failed to save changes. Please try again.');
     }
   };
 
@@ -1585,44 +1559,26 @@ export default function CFAssessmentManager() {
 
   const restoreFromBackup = async (restoredClients) => {
     try {
-      setSyncStatus('syncing');
-      // Migrate all clients to database
       await api.migrateData(restoredClients);
-      // Update local state
       setClients(restoredClients);
-      setSyncStatus('synced');
     } catch (error) {
       console.error('Failed to restore backup:', error);
-      setSyncStatus('error');
-      // Still update local state
-      setClients(restoredClients);
-      alert('Failed to sync to database. Changes saved locally only.');
+      alert('Failed to restore backup. Please try again.');
     }
   };
 
   const deleteClient = async (id) => {
     if (window.confirm("Remove this family from caseload?")) {
       try {
-        setSyncStatus('syncing');
-        // Delete from database
         await api.deleteClient(id);
-        // Update local state
         setClients(clients.filter(c => c.id !== id));
         if (activeId === id) {
           setView('list');
           setActiveId(null);
         }
-        setSyncStatus('synced');
       } catch (error) {
         console.error('Failed to delete client:', error);
-        setSyncStatus('error');
-        // Still update local state
-        setClients(clients.filter(c => c.id !== id));
-        if (activeId === id) {
-          setView('list');
-          setActiveId(null);
-        }
-        alert('Failed to delete from database. Removed locally only.');
+        alert('Failed to delete client. Please try again.');
       }
     }
   };
@@ -1656,19 +1612,13 @@ export default function CFAssessmentManager() {
       };
     }
 
-    // Update local state immediately for responsiveness
+    // Update local state and save
     setClients(clients.map(c => c.id === activeId ? updatedClient : c));
-
-    // Save to database in background
+    
     try {
-      setSyncStatus('syncing');
       await api.saveClient(updatedClient);
-      setSyncStatus('synced');
     } catch (error) {
       console.error('Failed to save assessment:', error);
-      setSyncStatus('error');
-      // Data is already updated locally, just notify user
-      setTimeout(() => setSyncStatus('synced'), 2000);
     }
   };
 
@@ -1752,21 +1702,6 @@ export default function CFAssessmentManager() {
             <div>
               <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <ClipboardList className="text-blue-600" /> CF Assessment Tracker
-                {syncStatus === 'syncing' && (
-                  <span className="text-xs text-blue-600 flex items-center gap-1">
-                    <RefreshCw className="w-3 h-3 animate-spin" /> Syncing...
-                  </span>
-                )}
-                {syncStatus === 'synced' && (
-                  <span className="text-xs text-emerald-600 flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" /> Synced
-                  </span>
-                )}
-                {syncStatus === 'error' && (
-                  <span className="text-xs text-red-600 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> Sync Error
-                  </span>
-                )}
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">RHA Child First • Child AA & Pregnant AA</p>
             </div>

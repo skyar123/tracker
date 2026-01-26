@@ -47,4 +47,17 @@ This project is configured for Netlify deployment. The build command is `npm run
 
 ## Data Storage
 
+### Current: Local Storage
 Data is stored locally in the browser using localStorage. All caseload data persists in your browser and can be exported/imported using the Backup feature in the app.
+
+### Cloud Sync Option (Firebase)
+For cloud sync across devices with Gmail login, see:
+- `FIREBASE_CLOUD_SYNC_GUIDE.md` - Complete implementation guide
+- `QUICK_START_FIREBASE.md` - 5-minute setup guide
+- `CLOUD_SYNC_COMPARISON.md` - Options comparison
+
+Firebase offers a **completely free tier** perfect for caseload tracking with:
+- Gmail/Google authentication
+- Real-time sync across devices
+- 1 GB storage (enough for ~10,000 clients)
+- No credit card required

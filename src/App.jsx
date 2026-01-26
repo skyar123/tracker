@@ -485,10 +485,10 @@ const is6MonthComplete = (client) => {
 };
 
 const calculateWorkload = (client) => {
-  const days = getDaysInService(client.admitDate);
+  const days = getDaysInService(client.admitDate || client.intake_date);
   const phase = getPhaseInfo(client, days);
-  const age = getAgeInMonths(client.dob);
-  const ageAtAdmit = getAgeInMonths(client.dob, client.admitDate);
+  const age = getAgeInMonths(client.dob || client.child_dob);
+  const ageAtAdmit = getAgeInMonths(client.dob || client.child_dob, client.admitDate || client.intake_date);
   
   let clinicianLeft = 0;
   let frpLeft = 0;
@@ -658,7 +658,7 @@ const calculatePhaseProgress = (client, phase) => {
 
 // Helper: Get the appropriate initial phase for a client based on their current phase
 const getInitialPhase = (client) => {
-  const days = getDaysInService(client.admitDate);
+  const days = getDaysInService(client.admitDate || client.intake_date);
   const phase = getPhaseInfo(client, days);
   
   // Map phase ID to activePhase value

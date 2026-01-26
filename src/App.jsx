@@ -5,7 +5,9 @@ import {
   FileText, Baby, Heart, Home, BookOpen, ExternalLink, Info, FolderOpen,
   ClipboardList, Flag, Sparkles, X, Stethoscope, UserPlus, Save, Link,
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
-  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database
+  TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database,
+  Bell, BellOff, Calendar as CalendarIcon, BarChart3, History, Undo2,
+  Settings, Layers, CheckSquare, FileSpreadsheet
 } from 'lucide-react';
 import { api } from './api.js';
 
@@ -103,6 +105,49 @@ const QUARTERLY_PROTOCOL = [
   { id: 'tx', name: 'Treatment Plan Review', full: 'Review goals with caregiver signatures', role: 'CLINICIAN', entry: 'CFCR' },
 ];
 
+// Client Status Configuration
+const CLIENT_STATUSES = {
+  ACTIVE: { 
+    label: 'Active', 
+    color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    icon: Activity
+  },
+  ON_HOLD: { 
+    label: 'On Hold', 
+    color: 'bg-amber-100 text-amber-800 border-amber-200',
+    icon: Clock
+  },
+  DISCHARGED: { 
+    label: 'Discharged', 
+    color: 'bg-slate-100 text-slate-800 border-slate-200',
+    icon: Archive
+  },
+  CLOSED: { 
+    label: 'Closed', 
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: X
+  }
+};
+
+// Assessment Dependencies - assessments that require prerequisites
+const ASSESSMENT_DEPENDENCIES = {
+  'base_ccis': ['base_intake', 'base_hope'], // CCIS requires intake and HOPE observations
+  'base_mchat_fu': ['base_mchat'], // Follow-up requires initial M-CHAT
+  '6mo_ccis': ['base_ccis'], // 6-month CCIS requires baseline
+  'dc_ccis': ['6mo_ccis'], // Discharge CCIS requires 6-month
+};
+
+// Activity Log Types
+const ACTIVITY_TYPES = {
+  CLIENT_ADDED: 'client_added',
+  CLIENT_UPDATED: 'client_updated',
+  CLIENT_DELETED: 'client_deleted',
+  CLIENT_STATUS_CHANGED: 'client_status_changed',
+  ASSESSMENT_COMPLETED: 'assessment_completed',
+  ASSESSMENT_UNCOMPLETED: 'assessment_uncompleted',
+  BULK_OPERATION: 'bulk_operation',
+};
+
 // Real client data
 const INITIAL_CLIENTS = [
   {
@@ -114,6 +159,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Emily Guernsey",
     notes: "",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-04-10",
       base_sniff: "2025-04-27",
@@ -145,6 +192,8 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "Gracie Griffin",
     notes: "Sensory concerns - completed SSP2",
+    status: "ACTIVE",
+    customFields: {},
     assessments: {
       base_intake: "2025-07-24",
       base_sniff: "2025-08-06",
@@ -491,6 +540,83 @@ const StatusBadge = ({ status }) => {
   };
   const c = configs[status];
   return <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${c.color}`}>{c.label}</span>;
+};
+
+// Client Status Badge Component
+const ClientStatusBadge = ({ status }) => {
+  const statusConfig = CLIENT_STATUSES[status] || CLIENT_STATUSES.ACTIVE;
+  const Icon = statusConfig.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${statusConfig.color}`}>
+      <Icon className="w-3 h-3" />
+      {statusConfig.label}
+    </span>
+  );
+};
+
+// Helper: Get due date reminder status
+const getDueDateReminderStatus = (daysUntil, isOverdue) => {
+  if (isOverdue) return { status: 'overdue', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' };
+  if (daysUntil <= 3) return { status: 'critical', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' };
+  if (daysUntil <= 7) return { status: 'warning', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' };
+  return { status: 'normal', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' };
+};
+
+// Helper: Check if assessment dependencies are met
+const checkAssessmentDependencies = (client, assessmentKey) => {
+  const dependencies = ASSESSMENT_DEPENDENCIES[assessmentKey];
+  if (!dependencies) return { met: true, missing: [] };
+  
+  const missing = dependencies.filter(dep => !client.assessments?.[dep]);
+  return { met: missing.length === 0, missing };
+};
+
+// Helper: Calculate progress percentage for a phase
+const calculatePhaseProgress = (client, phase) => {
+  let total = 0;
+  let completed = 0;
+  
+  if (phase === 'baseline') {
+    const baselineItems = BASELINE_PROTOCOL.flatMap(w => w.items);
+    baselineItems.forEach(item => {
+      total++;
+      if (client.assessments?.[`base_${item.id}`]) completed++;
+    });
+    // Add age-specific items
+    const age = getAgeInMonths(client.dob, client.admitDate);
+    if (client.type !== 'pregnant') {
+      if (isASQ3Applicable(age)) { total++; if (client.assessments?.base_asq3) completed++; }
+      if (isMCHATRequired(age)) { total++; if (client.assessments?.base_mchat) completed++; }
+      const seTool = getSETool(getAgeInMonths(client.dob), age, client.type);
+      total++; if (client.assessments?.[`base_${seTool.id}`]) completed++;
+    }
+  } else if (phase === '6month') {
+    FOLLOWUP_PROTOCOL.forEach(item => {
+      total++;
+      if (client.assessments?.[`6mo_${item.id}`]) completed++;
+    });
+    if (client.type !== 'pregnant') {
+      const age = getAgeInMonths(client.dob);
+      const seTool = getSETool(age, getAgeInMonths(client.dob, client.admitDate), client.type);
+      total++; if (client.assessments?.[`6mo_${seTool.id}`]) completed++;
+    }
+  } else if (phase === 'discharge') {
+    DISCHARGE_ONLY.forEach(item => {
+      total++;
+      if (client.assessments?.[`dc_${item.id}`]) completed++;
+    });
+    FOLLOWUP_PROTOCOL.forEach(item => {
+      total++;
+      if (client.assessments?.[`dc_${item.id}`]) completed++;
+    });
+    if (client.type !== 'pregnant') {
+      const age = getAgeInMonths(client.dob);
+      const seTool = getSETool(age, getAgeInMonths(client.dob, client.admitDate), client.type);
+      total++; if (client.assessments?.[`dc_${seTool.id}`]) completed++;
+    }
+  }
+  
+  return total > 0 ? Math.round((completed / total) * 100) : 0;
 };
 
 const UrgencyIndicator = ({ daysUntil, isOverdue }) => {
@@ -940,15 +1066,18 @@ const ClientCard = ({ client, onClick, onDelete, onEdit, linkedClient }) => {
 
       <div className="p-4 sm:p-5">
         {/* Header */}
-        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white shadow-sm ${
               client.type === 'pregnant' ? 'bg-gradient-to-br from-violet-400 to-violet-600' : 'bg-gradient-to-br from-blue-400 to-blue-600'
             }`}>
               {(client.nickname || client.name).charAt(0)}
             </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-lg leading-tight">{client.nickname || client.name}</h3>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-slate-800 text-lg leading-tight">{client.nickname || client.name}</h3>
+                <ClientStatusBadge status={client.status || 'ACTIVE'} />
+              </div>
               <p className="text-xs text-slate-400">{client.caregiver}</p>
             </div>
           </div>
@@ -1209,8 +1338,12 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
     admitDate: '', 
     type: 'child',
     caregiver: '',
-    notes: ''
+    notes: '',
+    status: 'ACTIVE',
+    customFields: {}
   });
+  const [customFieldKey, setCustomFieldKey] = useState('');
+  const [customFieldValue, setCustomFieldValue] = useState('');
 
   // Update form data when client changes
   useEffect(() => {
@@ -1222,7 +1355,9 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
         admitDate: client.admitDate || '',
         type: client.type || 'child',
         caregiver: client.caregiver || '',
-        notes: client.notes || ''
+        notes: client.notes || '',
+        status: client.status || 'ACTIVE',
+        customFields: client.customFields || {}
       });
     }
   }, [client]);
@@ -1319,6 +1454,18 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
               />
             </div>
             <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
+              <select 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={data.status}
+                onChange={e => setData({...data, status: e.target.value})}
+              >
+                {Object.entries(CLIENT_STATUSES).map(([key, config]) => (
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notes</label>
               <textarea 
                 className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
@@ -1327,6 +1474,58 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
                 onChange={e => setData({...data, notes: e.target.value})}
                 placeholder="Any notes..."
               />
+            </div>
+            <div className="col-span-2 border-t pt-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Custom Fields</label>
+              <div className="space-y-2 mb-3">
+                {Object.entries(data.customFields || {}).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700 flex-1">{key}:</span>
+                    <span className="text-sm text-slate-600 flex-1">{value}</span>
+                    <button
+                      onClick={() => {
+                        const newFields = { ...data.customFields };
+                        delete newFields[key];
+                        setData({ ...data, customFields: newFields });
+                      }}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Field name"
+                  className="flex-1 border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  value={customFieldKey}
+                  onChange={e => setCustomFieldKey(e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="Value"
+                  className="flex-1 border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                  value={customFieldValue}
+                  onChange={e => setCustomFieldValue(e.target.value)}
+                />
+                <button
+                  onClick={() => {
+                    if (customFieldKey && customFieldValue) {
+                      setData({
+                        ...data,
+                        customFields: { ...data.customFields, [customFieldKey]: customFieldValue }
+                      });
+                      setCustomFieldKey('');
+                      setCustomFieldValue('');
+                    }
+                  }}
+                  className="px-3 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 text-sm font-medium"
+                >
+                  Add
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1352,8 +1551,12 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
     admitDate: '', 
     type: 'child',
     caregiver: '',
-    notes: ''
+    notes: '',
+    status: 'ACTIVE',
+    customFields: {}
   });
+  const [customFieldKey, setCustomFieldKey] = useState('');
+  const [customFieldValue, setCustomFieldValue] = useState('');
 
   if (!isOpen) return null;
 
@@ -1365,7 +1568,9 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
         assessments: {},
         ageAtAdmission: data.dob ? getAgeInMonths(data.dob) : 0
       });
-      setData({ name: '', nickname: '', dob: '', admitDate: '', type: 'child', caregiver: '', notes: '' });
+      setData({ name: '', nickname: '', dob: '', admitDate: '', type: 'child', caregiver: '', notes: '', status: 'ACTIVE', customFields: {} });
+      setCustomFieldKey('');
+      setCustomFieldValue('');
       onClose();
     }
   };
@@ -1450,6 +1655,18 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
               />
             </div>
             <div className="col-span-2">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
+              <select 
+                className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                value={data.status}
+                onChange={e => setData({...data, status: e.target.value})}
+              >
+                {Object.entries(CLIENT_STATUSES).map(([key, config]) => (
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notes</label>
               <textarea 
                 className="w-full border border-slate-300 p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
@@ -1458,6 +1675,58 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
                 onChange={e => setData({...data, notes: e.target.value})}
                 placeholder="Any initial notes..."
               />
+            </div>
+            <div className="col-span-2 border-t pt-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Custom Fields (Optional)</label>
+              <div className="space-y-2 mb-3">
+                {Object.entries(data.customFields || {}).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700 flex-1">{key}:</span>
+                    <span className="text-sm text-slate-600 flex-1">{value}</span>
+                    <button
+                      onClick={() => {
+                        const newFields = { ...data.customFields };
+                        delete newFields[key];
+                        setData({ ...data, customFields: newFields });
+                      }}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Field name"
+                  className="flex-1 border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={customFieldKey}
+                  onChange={e => setCustomFieldKey(e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="Value"
+                  className="flex-1 border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={customFieldValue}
+                  onChange={e => setCustomFieldValue(e.target.value)}
+                />
+                <button
+                  onClick={() => {
+                    if (customFieldKey && customFieldValue) {
+                      setData({
+                        ...data,
+                        customFields: { ...data.customFields, [customFieldKey]: customFieldValue }
+                      });
+                      setCustomFieldKey('');
+                      setCustomFieldValue('');
+                    }
+                  }}
+                  className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm font-medium"
+                >
+                  Add
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1468,6 +1737,70 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
           </button>
           <button onClick={handleSave} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-md transition-all">
             Add Family
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Activity Log Modal Component
+const ActivityLogModal = ({ isOpen, onClose, activities, onUndo }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-slate-500 to-slate-600 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <History className="w-5 h-5" /> Recent Activity
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {activities.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No recent activity</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activities.slice().reverse().map((activity) => (
+                <div key={activity.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                    {activity.type === ACTIVITY_TYPES.ASSESSMENT_COMPLETED && <CheckCircle className="w-4 h-4 text-blue-600" />}
+                    {activity.type === ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED && <X className="w-4 h-4 text-amber-600" />}
+                    {activity.type === ACTIVITY_TYPES.CLIENT_ADDED && <Plus className="w-4 h-4 text-emerald-600" />}
+                    {activity.type === ACTIVITY_TYPES.CLIENT_UPDATED && <Edit2 className="w-4 h-4 text-sky-600" />}
+                    {activity.type === ACTIVITY_TYPES.CLIENT_DELETED && <Trash2 className="w-4 h-4 text-red-600" />}
+                    {activity.type === ACTIVITY_TYPES.CLIENT_STATUS_CHANGED && <Flag className="w-4 h-4 text-violet-600" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800">{activity.description}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 border-t border-slate-200 pt-4 flex gap-3">
+          {activities.length > 0 && (
+            <button 
+              onClick={() => { onUndo(); onClose(); }}
+              className="flex-1 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <Undo2 className="w-4 h-4" /> Undo Last
+            </button>
+          )}
+          <button onClick={onClose} className="flex-1 py-2.5 text-slate-500 font-medium hover:bg-slate-50 rounded-xl transition-colors">
+            Close
           </button>
         </div>
       </div>
@@ -1488,13 +1821,20 @@ export default function CFAssessmentManager() {
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('urgency'); // urgency, name, days
+  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, ACTIVE, ON_HOLD, DISCHARGED, CLOSED
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
+  const [activityLog, setActivityLog] = useState([]);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedClients, setSelectedClients] = useState(new Set());
 
-  // Load clients from localStorage on mount
+  // Load clients and activity log from localStorage on mount
   useEffect(() => {
     const loadClients = async () => {
       try {
@@ -1504,6 +1844,11 @@ export default function CFAssessmentManager() {
           setClients(INITIAL_CLIENTS);
         } else {
           setClients(data);
+        }
+        // Load activity log
+        const savedLog = localStorage.getItem('cf_activity_log');
+        if (savedLog) {
+          setActivityLog(JSON.parse(savedLog).slice(-10)); // Keep last 10
         }
       } catch (error) {
         console.error('Failed to load clients:', error);
@@ -1515,6 +1860,33 @@ export default function CFAssessmentManager() {
 
     loadClients();
   }, []);
+
+  // Save activity log to localStorage
+  useEffect(() => {
+    if (activityLog.length > 0) {
+      localStorage.setItem('cf_activity_log', JSON.stringify(activityLog.slice(-50))); // Keep last 50
+    }
+  }, [activityLog]);
+
+  // Helper: Add activity to log
+  const addActivity = useCallback((type, description, data = null) => {
+    const activity = {
+      id: Date.now(),
+      type,
+      description,
+      data,
+      timestamp: new Date().toISOString()
+    };
+    setActivityLog(prev => [...prev.slice(-9), activity]); // Keep last 10
+  }, []);
+
+  // Helper: Undo last activity
+  const undoLastActivity = useCallback(() => {
+    if (activityLog.length === 0) return;
+    const lastActivity = activityLog[activityLog.length - 1];
+    // Implementation depends on activity type - for now just remove from log
+    setActivityLog(prev => prev.slice(0, -1));
+  }, [activityLog]);
 
   // Save to localStorage as backup whenever clients change
   useEffect(() => {
@@ -1532,8 +1904,9 @@ export default function CFAssessmentManager() {
   // Actions
   const addClient = async (newClient) => {
     try {
-      await api.saveClient(newClient);
-      setClients([...clients, newClient]);
+      const savedClient = await api.saveClient(newClient);
+      setClients([...clients, savedClient]);
+      addActivity(ACTIVITY_TYPES.CLIENT_ADDED, `Added client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id });
     } catch (error) {
       console.error('Failed to save client:', error);
       alert('Failed to save client. Please try again.');
@@ -1542,10 +1915,20 @@ export default function CFAssessmentManager() {
 
   const updateClient = async (updatedClient) => {
     try {
-      await api.saveClient(updatedClient);
-      setClients(clients.map(c => c.id === updatedClient.id ? updatedClient : c));
+      const oldClient = clients.find(c => c.id === updatedClient.id);
+      const savedClient = await api.saveClient(updatedClient);
+      setClients(clients.map(c => c.id === savedClient.id ? savedClient : c));
       setIsEditModalOpen(false);
       setEditingClient(null);
+      
+      // Log status change if status changed
+      if (oldClient && oldClient.status !== savedClient.status) {
+        addActivity(ACTIVITY_TYPES.CLIENT_STATUS_CHANGED, 
+          `Changed ${savedClient.nickname || savedClient.name} status to ${CLIENT_STATUSES[savedClient.status]?.label}`, 
+          { clientId: savedClient.id, oldStatus: oldClient.status, newStatus: savedClient.status });
+      } else {
+        addActivity(ACTIVITY_TYPES.CLIENT_UPDATED, `Updated client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id });
+      }
     } catch (error) {
       console.error('Failed to update client:', error);
       alert('Failed to save changes. Please try again.');
@@ -1568,6 +1951,7 @@ export default function CFAssessmentManager() {
   };
 
   const deleteClient = async (id) => {
+    const client = clients.find(c => c.id === id);
     if (window.confirm("Remove this family from caseload?")) {
       try {
         await api.deleteClient(id);
@@ -1575,6 +1959,9 @@ export default function CFAssessmentManager() {
         if (activeId === id) {
           setView('list');
           setActiveId(null);
+        }
+        if (client) {
+          addActivity(ACTIVITY_TYPES.CLIENT_DELETED, `Deleted client: ${client.nickname || client.name}`, { clientId: id });
         }
       } catch (error) {
         console.error('Failed to delete client:', error);
@@ -1586,10 +1973,18 @@ export default function CFAssessmentManager() {
   const toggleAssessment = async (key) => {
     if (!client) return;
 
+    // Check dependencies
+    const deps = checkAssessmentDependencies(client, key);
+    if (!deps.met) {
+      alert(`Cannot complete this assessment. Please complete these prerequisites first:\n${deps.missing.map(m => `- ${m.replace(/^(base_|6mo_|dc_|q\d_)/, '')}`).join('\n')}`);
+      return;
+    }
+
     let updatedClient;
+    const isCurrentlyDone = !!client.assessments?.[key];
 
     // M-CHAT special handling
-    if (key === 'base_mchat' && !client.assessments?.[key]) {
+    if (key === 'base_mchat' && !isCurrentlyDone) {
       const isHighRisk = window.confirm(
         "M-CHAT-R/F Score Check:\n\n" +
         "Did the child score ≥ 3?\n\n" +
@@ -1605,26 +2000,44 @@ export default function CFAssessmentManager() {
         mchatHighRisk: isHighRisk
       };
     } else {
-      const isDone = !!client.assessments?.[key];
       updatedClient = {
         ...client,
-        assessments: { ...client.assessments, [key]: isDone ? null : new Date().toISOString() }
+        assessments: { ...client.assessments, [key]: isCurrentlyDone ? null : new Date().toISOString() }
       };
     }
 
-    // Update local state and save
-    setClients(clients.map(c => c.id === activeId ? updatedClient : c));
-    
+    // Save and update local state with the saved version (includes updatedAt)
     try {
-      await api.saveClient(updatedClient);
+      const savedClient = await api.saveClient(updatedClient);
+      setClients(clients.map(c => c.id === activeId ? savedClient : c));
+      
+      // Log activity
+      if (isCurrentlyDone) {
+        addActivity(ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED, `Uncompleted ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key });
+      } else {
+        addActivity(ACTIVITY_TYPES.ASSESSMENT_COMPLETED, `Completed ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key });
+      }
     } catch (error) {
       console.error('Failed to save assessment:', error);
+      // Still update local state even if save fails
+      setClients(clients.map(c => c.id === activeId ? updatedClient : c));
     }
   };
 
   // Filter and sort clients
   const processedClients = useMemo(() => {
     let result = [...clients];
+    
+    // Status filter - exclude DISCHARGED and CLOSED by default unless explicitly filtered
+    if (statusFilter !== 'ALL') {
+      result = result.filter(c => (c.status || 'ACTIVE') === statusFilter);
+    } else {
+      // By default, show ACTIVE, ON_HOLD, and those without status
+      result = result.filter(c => {
+        const status = c.status || 'ACTIVE';
+        return status === 'ACTIVE' || status === 'ON_HOLD' || !c.status;
+      });
+    }
     
     // Search
     if (searchQuery) {
@@ -1657,7 +2070,7 @@ export default function CFAssessmentManager() {
     });
 
     return result;
-  }, [clients, searchQuery, sortBy]);
+  }, [clients, searchQuery, sortBy, statusFilter]);
 
   // Dashboard stats
   const stats = useMemo(() => {
@@ -1705,7 +2118,26 @@ export default function CFAssessmentManager() {
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">RHA Child First • Child AA & Pregnant AA</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setShowActivityLog(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors"
+                title="View recent activity"
+              >
+                <History className="w-4 h-4" /> 
+                <span className="hidden sm:inline">Activity</span>
+                {activityLog.length > 0 && (
+                  <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">{activityLog.length}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-xl hover:border-slate-300 transition-colors"
+                title="Calendar view"
+              >
+                <CalendarIcon className="w-4 h-4" /> 
+                <span className="hidden sm:inline">Calendar</span>
+              </button>
               <button
                 onClick={() => setIsBackupModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl hover:bg-emerald-100 transition-colors"
@@ -1773,6 +2205,17 @@ export default function CFAssessmentManager() {
             </div>
             <div className="flex gap-2">
               <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ALL">Status: Active</option>
+                <option value="ACTIVE">Status: Active Only</option>
+                <option value="ON_HOLD">Status: On Hold</option>
+                <option value="DISCHARGED">Status: Discharged</option>
+                <option value="CLOSED">Status: Closed</option>
+              </select>
+              <select 
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1821,6 +2264,12 @@ export default function CFAssessmentManager() {
       <AddClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={addClient} />
       <EditClientModal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingClient(null); }} onSave={updateClient} client={editingClient} />
       <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} clients={clients} onRestore={restoreFromBackup} />
+      <ActivityLogModal 
+        isOpen={showActivityLog} 
+        onClose={() => setShowActivityLog(false)} 
+        activities={activityLog}
+        onUndo={undoLastActivity}
+      />
     </div>
     );
   };
@@ -2000,13 +2449,35 @@ export default function CFAssessmentManager() {
                     <UrgencyIndicator daysUntil={phase.daysUntil} isOverdue={phase.isOverdue} />
                   </div>
                 </div>
-                <div className="text-sm text-slate-600">
-                  {isBaselineComplete(client) ? (
-                    <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-4 h-4" /> Baseline complete!</span>
-                  ) : (
-                    <span>Complete all assessments within 60 days of admission</span>
-                  )}
-                </div>
+                {(() => {
+                  const progress = calculatePhaseProgress(client, 'baseline');
+                  const reminderStatus = getDueDateReminderStatus(phase.daysUntil, phase.isOverdue);
+                  return (
+                    <>
+                      <div className="mb-2">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-slate-600">Progress: {progress}%</span>
+                          <span className={`font-medium ${reminderStatus.color}`}>
+                            {phase.isOverdue ? 'Overdue' : phase.daysUntil <= 3 ? 'Due in 3 days' : phase.daysUntil <= 7 ? 'Due this week' : 'On track'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all ${progress === 100 ? 'bg-emerald-500' : progress >= 75 ? 'bg-blue-500' : progress >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-sm text-slate-600">
+                        {isBaselineComplete(client) ? (
+                          <span className="text-emerald-600 font-medium flex items-center gap-1"><CheckCircle className="w-4 h-4" /> Baseline complete!</span>
+                        ) : (
+                          <span>Complete all assessments within 60 days of admission</span>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Age-specific tools card */}

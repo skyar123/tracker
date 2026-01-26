@@ -33,7 +33,7 @@ export const api = {
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
-      return client;
+      return clientToSave;
     } catch (error) {
       console.error('Error saving client:', error);
       throw error;

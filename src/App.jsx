@@ -604,29 +604,37 @@ const calculatePhaseProgress = (client, phase) => {
   
   if (phase === 'baseline') {
     const baselineItems = BASELINE_PROTOCOL.flatMap(w => w.items);
+    const isPregnant = client.type === 'pregnant';
+    
     baselineItems.forEach(item => {
       // Skip asq3 and mchat from protocol - they're handled separately as age-specific
+      // Also explicitly skip for pregnant clients to prevent any counting
       if (item.id === 'asq3' || item.id === 'mchat') return;
+      // Additional safeguard: never count ASQ-3 for pregnant clients
+      if (item.id === 'asq3' && isPregnant) return;
       total++;
       if (isAssessmentComplete(getAssessment(client, `base_${item.id}`))) completed++;
     });
-    // Add age-specific items (only for non-pregnant)
-    if (client.type !== 'pregnant') {
-      // ASQ-3 only counts if age-applicable
+    
+    // Add age-specific items (only for non-pregnant clients)
+    // Pregnant clients should NEVER have ASQ-3, M-CHAT, or child-specific SE tools counted
+    if (!isPregnant) {
+      // ASQ-3 only counts if age-applicable (never for pregnant clients)
       if (isASQ3Applicable(age)) { 
         total++; 
         if (isAssessmentComplete(getAssessment(client, 'base_asq3'))) completed++; 
       }
-      // M-CHAT only counts if age-required
+      // M-CHAT only counts if age-required (never for pregnant clients)
       if (isMCHATRequired(age)) { 
         total++; 
         if (isAssessmentComplete(getAssessment(client, 'base_mchat'))) completed++; 
       }
-      // SE tool
+      // SE tool (child-specific, not for pregnant clients)
       const seTool = getSETool(getAgeInMonths(client.dob || client.child_dob), age, client.type);
       total++; 
       if (isAssessmentComplete(getAssessment(client, 'base_se'))) completed++;
     }
+    // Explicit: Pregnant clients do NOT get ASQ-3, M-CHAT, or child SE tools counted
   } else if (phase === '6month') {
     FOLLOWUP_PROTOCOL.forEach(item => {
       total++;

@@ -15,6 +15,9 @@ import { api } from './api.js';
 // CONFIGURATION
 // ============================================================================
 
+// App Version - Update this when making significant changes
+const APP_VERSION = '1.1.0';
+
 const ROLES = {
   CLINICIAN: { 
     label: 'Clinician', 
@@ -2193,6 +2196,7 @@ export default function CFAssessmentManager() {
             <div>
               <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <ClipboardList className="text-blue-600" /> CF Assessment Tracker
+                <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">RHA Child First • Child AA & Pregnant AA</p>
             </div>
@@ -2434,7 +2438,9 @@ export default function CFAssessmentManager() {
               </tbody>
             </table>
 
-            <p className="text-xs text-slate-400 mt-8 pt-4 border-t">Generated {new Date().toLocaleString()}</p>
+            <p className="text-xs text-slate-400 mt-8 pt-4 border-t">
+              Generated {new Date().toLocaleString()} • App Version {APP_VERSION}
+            </p>
           </div>
           <style>{`@media print { .no-print { display: none !important; } }`}</style>
         </div>
@@ -2461,7 +2467,10 @@ export default function CFAssessmentManager() {
                     {(client.nickname || client.name).charAt(0)}
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold text-slate-800">{client.nickname || client.name}</h1>
+                    <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      {client.nickname || client.name}
+                      <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
+                    </h1>
                     <p className="text-xs text-slate-500">{client.caregiver} • Day {days} • {age}mo</p>
                   </div>
                 </div>

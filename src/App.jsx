@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Users, Clock, AlertCircle, CheckCircle, Calendar, ChevronDown, ChevronRight,
+  Users, Clock, AlertCircle, CheckCircle, Calendar, ChevronDown, ChevronRight, ChevronLeft,
   ArrowLeft, Activity, AlertTriangle, Plus, Trash2, Calculator, Printer,
   FileText, Baby, Heart, Home, BookOpen, ExternalLink, Info, FolderOpen,
   ClipboardList, Flag, Sparkles, X, Stethoscope, UserPlus, Save, Link,
@@ -1788,6 +1788,218 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
   );
 };
 
+// Calendar View Component
+const CalendarView = ({ clients, onClientClick }) => {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  // Get all assessment due dates
+  const dueDates = useMemo(() => {
+    const dates = {};
+    clients.forEach(client => {
+      const workload = calculateWorkload(client);
+      const dueDate = addDays(client.admitDate, workload.phase.dueDays);
+      const dateKey = dueDate;
+      
+      if (!dates[dateKey]) {
+        dates[dateKey] = [];
+      }
+      dates[dateKey].push({
+        client,
+        phase: workload.phase,
+        daysUntil: workload.phase.daysUntil,
+        isOverdue: workload.phase.isOverdue
+      });
+    });
+    return dates;
+  }, [clients]);
+
+  // Get calendar days for current month
+  const calendarDays = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    
+    const days = [];
+    
+    // Add empty cells for days before month starts
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null);
+    }
+    
+    // Add all days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const dateKey = date.toISOString().split('T')[0];
+      days.push({
+        day,
+        date: dateKey,
+        events: dueDates[dateKey] || []
+      });
+    }
+    
+    return days;
+  }, [currentMonth, dueDates]);
+
+  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  
+  const prevMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  };
+  
+  const nextMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  };
+  
+  const today = new Date().toISOString().split('T')[0];
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+          <CalendarIcon className="w-5 h-5 text-blue-600" /> Assessment Calendar
+        </h2>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={prevMonth}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Previous month"
+          >
+            <ChevronLeft className="w-4 h-4 text-slate-600" />
+          </button>
+          <span className="text-sm font-semibold text-slate-700 min-w-[150px] text-center">
+            {monthName}
+          </span>
+          <button
+            onClick={nextMonth}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Next month"
+          >
+            <ChevronRight className="w-4 h-4 text-slate-600" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {weekDays.map(day => (
+          <div key={day} className="text-center text-xs font-bold text-slate-500 py-2">
+            {day}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {calendarDays.map((dayData, idx) => {
+          if (!dayData) {
+            return <div key={`empty-${idx}`} className="aspect-square" />;
+          }
+          
+          const { day, date, events } = dayData;
+          const isToday = date === today;
+          const hasEvents = events.length > 0;
+          const overdueCount = events.filter(e => e.isOverdue).length;
+          const dueSoonCount = events.filter(e => !e.isOverdue && e.daysUntil <= 7).length;
+          
+          return (
+            <div
+              key={date}
+              className={`aspect-square border border-slate-200 rounded-lg p-1 text-xs ${
+                isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'
+              } ${hasEvents ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+            >
+              <div className={`font-semibold mb-1 ${isToday ? 'text-blue-600' : 'text-slate-700'}`}>
+                {day}
+              </div>
+              {hasEvents && (
+                <div className="space-y-0.5">
+                  {overdueCount > 0 && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      <span className="text-[10px] text-red-600 font-medium">{overdueCount}</span>
+                    </div>
+                  )}
+                  {dueSoonCount > 0 && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <span className="text-[10px] text-amber-600 font-medium">{dueSoonCount}</span>
+                    </div>
+                  )}
+                  {events.length > overdueCount + dueSoonCount && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                      <span className="text-[10px] text-slate-500">{events.length - overdueCount - dueSoonCount}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-4 mt-6 pt-4 border-t border-slate-200 text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-500" />
+          <span className="text-slate-600">Overdue</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-amber-500" />
+          <span className="text-slate-600">Due within 7 days</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-slate-400" />
+          <span className="text-slate-600">Upcoming</span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="w-3 h-3 rounded border-2 border-blue-300 bg-blue-50" />
+          <span className="text-slate-600">Today</span>
+        </div>
+      </div>
+
+      {/* Events list for selected date (if clicking on a day) */}
+      {Object.keys(dueDates).length > 0 && (
+        <div className="mt-6 pt-4 border-t border-slate-200">
+          <h3 className="text-sm font-bold text-slate-700 mb-3">Upcoming Deadlines</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {Object.entries(dueDates)
+              .sort(([a], [b]) => new Date(a) - new Date(b))
+              .slice(0, 10)
+              .map(([dateKey, events]) => (
+                <div key={dateKey} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg">
+                  <div className="text-xs font-semibold text-slate-600 min-w-[80px]">
+                    {formatDate(dateKey, 'medium')}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    {events.map((event, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => onClientClick(event.client)}
+                        className={`text-xs p-1.5 rounded cursor-pointer hover:bg-white transition-colors ${
+                          event.isOverdue
+                            ? 'bg-red-50 text-red-700 border border-red-200'
+                            : event.daysUntil <= 7
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-white text-slate-600 border border-slate-200'
+                        }`}
+                      >
+                        <div className="font-medium">{event.client.nickname || event.client.name}</div>
+                        <div className="text-[10px] opacity-75">{event.phase.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Activity Log Modal Component
 const ActivityLogModal = ({ isOpen, onClose, activities, onUndo }) => {
   if (!isOpen) return null;
@@ -2328,38 +2540,51 @@ export default function CFAssessmentManager() {
 
       {/* Client grid */}
       <div className="max-w-6xl mx-auto p-4 pb-20 space-y-6">
+        {/* Calendar View */}
+        {showCalendar && clients.length > 0 && (
+          <CalendarView clients={clients} onClientClick={(client) => {
+            const initialPhase = getInitialPhase(client);
+            setActiveId(client.id);
+            setView('detail');
+            setActivePhase(initialPhase);
+            setShowCalendar(false);
+          }} />
+        )}
+
         {/* Deadline Timeline */}
-        {clients.length > 0 && <DeadlineTimeline clients={clients} />}
+        {!showCalendar && clients.length > 0 && <DeadlineTimeline clients={clients} />}
 
         {/* Client cards */}
-        {processedClients.length === 0 ? (
-          <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
-            <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-500 mb-2">{searchQuery ? 'No matching families' : 'No active families'}</p>
-            {!searchQuery && (
-              <button onClick={() => setIsModalOpen(true)} className="text-blue-600 font-medium hover:underline">
-                Add your first family
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {processedClients.map(c => (
-              <ClientCard
-                key={c.id}
-                client={c}
-                onClick={() => { 
-                  const initialPhase = getInitialPhase(c);
-                  setActiveId(c.id); 
-                  setView('detail'); 
-                  setActivePhase(initialPhase); 
-                }}
-                onEdit={handleEditClient}
-                onDelete={deleteClient}
-                linkedClient={c.linkedId ? clients.find(x => x.id === c.linkedId) : null}
-              />
-            ))}
-          </div>
+        {!showCalendar && (
+          processedClients.length === 0 ? (
+            <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-2xl bg-white">
+              <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-500 mb-2">{searchQuery ? 'No matching families' : 'No active families'}</p>
+              {!searchQuery && (
+                <button onClick={() => setIsModalOpen(true)} className="text-blue-600 font-medium hover:underline">
+                  Add your first family
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {processedClients.map(c => (
+                <ClientCard
+                  key={c.id}
+                  client={c}
+                  onClick={() => { 
+                    const initialPhase = getInitialPhase(c);
+                    setActiveId(c.id); 
+                    setView('detail'); 
+                    setActivePhase(initialPhase); 
+                  }}
+                  onEdit={handleEditClient}
+                  onDelete={deleteClient}
+                  linkedClient={c.linkedId ? clients.find(x => x.id === c.linkedId) : null}
+                />
+              ))}
+            </div>
+          )
         )}
       </div>
 

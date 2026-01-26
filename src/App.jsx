@@ -2037,24 +2037,96 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
 // Calendar View Component
 const CalendarView = ({ clients, onClientClick }) => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDateEvents, setSelectedDateEvents] = useState([]);
   
-  // Get all assessment due dates
+  // Get all important dates (assessments, treatment plans, CCA dates, auth expiration)
   const dueDates = useMemo(() => {
     const dates = {};
     clients.forEach(client => {
-      const workload = calculateWorkload(client);
-      const dueDate = addDays(client.admitDate || client.intake_date, workload.phase.dueDays);
-      const dateKey = dueDate;
+      const admitDate = client.admitDate || client.intake_date;
+      if (!admitDate) return;
       
-      if (!dates[dateKey]) {
-        dates[dateKey] = [];
+      // Assessment phase due dates
+      const workload = calculateWorkload(client);
+      const phaseDueDate = addDays(admitDate, workload.phase.dueDays);
+      if (phaseDueDate) {
+        const dateKey = phaseDueDate;
+        if (!dates[dateKey]) dates[dateKey] = [];
+        dates[dateKey].push({
+          client,
+          type: 'assessment',
+          label: workload.phase.label,
+          phase: workload.phase,
+          daysUntil: workload.phase.daysUntil,
+          isOverdue: workload.phase.isOverdue
+        });
       }
-      dates[dateKey].push({
-        client,
-        phase: workload.phase,
-        daysUntil: workload.phase.daysUntil,
-        isOverdue: workload.phase.isOverdue
+      
+      // Treatment plan dates
+      const txDates = [
+        { date: client.initial_tx_plan || client.customFields?.initialTxPlan, label: 'Initial TX Plan' },
+        { date: client.sixty_day_tx_plan || client.customFields?.sixtyDayTxPlan, label: '60-Day TX Plan' },
+        { date: client.ninety_day_tx_plan || client.customFields?.ninetyDayTxPlan, label: '90-Day TX Plan' },
+        { date: client.next_tx_plan || client.customFields?.nextTxPlan, label: 'Next TX Plan' }
+      ];
+      
+      txDates.forEach(({ date, label }) => {
+        if (date) {
+          const dateKey = date;
+          if (!dates[dateKey]) dates[dateKey] = [];
+          const txDate = new Date(date);
+          const today = new Date();
+          const daysUntil = Math.ceil((txDate - today) / (1000 * 60 * 60 * 24));
+          dates[dateKey].push({
+            client,
+            type: 'treatment_plan',
+            label,
+            daysUntil,
+            isOverdue: daysUntil < 0
+          });
+        }
       });
+      
+      // CCA dates
+      const ccaDates = [
+        { date: client.initial_cca_date || client.customFields?.initialCcaDate, label: 'Initial CCA' },
+        { date: client.sixty_day_cca_date || client.customFields?.sixtyDayCcaDate, label: '60-Day CCA' }
+      ];
+      
+      ccaDates.forEach(({ date, label }) => {
+        if (date) {
+          const dateKey = date;
+          if (!dates[dateKey]) dates[dateKey] = [];
+          const ccaDate = new Date(date);
+          const today = new Date();
+          const daysUntil = Math.ceil((ccaDate - today) / (1000 * 60 * 60 * 24));
+          dates[dateKey].push({
+            client,
+            type: 'cca',
+            label,
+            daysUntil,
+            isOverdue: daysUntil < 0
+          });
+        }
+      });
+      
+      // Auth expiration
+      const authExpires = client.auth_expires || client.customFields?.authExpires;
+      if (authExpires) {
+        const dateKey = authExpires;
+        if (!dates[dateKey]) dates[dateKey] = [];
+        const authDate = new Date(authExpires);
+        const today = new Date();
+        const daysUntil = Math.ceil((authDate - today) / (1000 * 60 * 60 * 24));
+        dates[dateKey].push({
+          client,
+          type: 'auth_expiration',
+          label: 'Authorization Expires',
+          daysUntil,
+          isOverdue: daysUntil < 0
+        });
+      }
     });
     return dates;
   }, [clients]);
@@ -2149,12 +2221,20 @@ const CalendarView = ({ clients, onClientClick }) => {
           const overdueCount = events.filter(e => e.isOverdue).length;
           const dueSoonCount = events.filter(e => !e.isOverdue && e.daysUntil <= 7).length;
           
+          const handleDateClick = () => {
+            if (hasEvents) {
+              setSelectedDate(date);
+              setSelectedDateEvents(events);
+            }
+          };
+          
           return (
             <div
               key={date}
-              className={`aspect-square border border-slate-200 rounded-lg p-1 text-xs ${
+              onClick={handleDateClick}
+              className={`aspect-square border border-slate-200 rounded-lg p-1 text-xs transition-all ${
                 isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'
-              } ${hasEvents ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+              } ${hasEvents ? 'cursor-pointer hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm' : ''}`}
             >
               <div className={`font-semibold mb-1 ${isToday ? 'text-blue-600' : 'text-slate-700'}`}>
                 {day}
@@ -2206,16 +2286,74 @@ const CalendarView = ({ clients, onClientClick }) => {
         </div>
       </div>
 
-      {/* Events list for selected date (if clicking on a day) */}
+      {/* Selected Date Modal */}
+      {selectedDate && selectedDateEvents.length > 0 && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedDate(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h3 className="text-lg font-bold text-white">
+                {formatDate(selectedDate, 'long')}
+              </h3>
+              <button onClick={() => setSelectedDate(null)} className="text-white/70 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 max-h-96 overflow-y-auto">
+              <div className="space-y-2">
+                {selectedDateEvents.map((event, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      onClientClick(event.client);
+                      setSelectedDate(null);
+                    }}
+                    className={`p-3 rounded-lg cursor-pointer hover:shadow-md transition-all border-2 ${
+                      event.isOverdue
+                        ? 'bg-red-50 text-red-700 border-red-200 hover:border-red-300'
+                        : event.daysUntil <= 7
+                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-300'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold text-sm mb-1">{event.client.nickname || event.client.name || event.client.child_name}</div>
+                    <div className="text-xs opacity-75 mb-1">{event.label}</div>
+                    {event.daysUntil !== undefined && (
+                      <div className="text-[10px] font-medium">
+                        {event.isOverdue 
+                          ? `Overdue by ${Math.abs(event.daysUntil)} days`
+                          : event.daysUntil === 0
+                          ? 'Due today'
+                          : `Due in ${event.daysUntil} days`
+                        }
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming Deadlines List */}
       {Object.keys(dueDates).length > 0 && (
         <div className="mt-6 pt-4 border-t border-slate-200">
-          <h3 className="text-sm font-bold text-slate-700 mb-3">Upcoming Deadlines</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-3">Upcoming Deadlines (Next 30 Days)</h3>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {Object.entries(dueDates)
+              .filter(([dateKey]) => {
+                const date = new Date(dateKey);
+                const today = new Date();
+                const daysDiff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
+                return daysDiff >= 0 && daysDiff <= 30;
+              })
               .sort(([a], [b]) => new Date(a) - new Date(b))
-              .slice(0, 10)
+              .slice(0, 15)
               .map(([dateKey, events]) => (
-                <div key={dateKey} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg">
+                <div key={dateKey} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => {
+                  setSelectedDate(dateKey);
+                  setSelectedDateEvents(events);
+                }}>
                   <div className="text-xs font-semibold text-slate-600 min-w-[80px]">
                     {formatDate(dateKey, 'medium')}
                   </div>
@@ -2223,7 +2361,10 @@ const CalendarView = ({ clients, onClientClick }) => {
                     {events.map((event, idx) => (
                       <div
                         key={idx}
-                        onClick={() => onClientClick(event.client)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onClientClick(event.client);
+                        }}
                         className={`text-xs p-1.5 rounded cursor-pointer hover:bg-white transition-colors ${
                           event.isOverdue
                             ? 'bg-red-50 text-red-700 border border-red-200'
@@ -2232,8 +2373,8 @@ const CalendarView = ({ clients, onClientClick }) => {
                             : 'bg-white text-slate-600 border border-slate-200'
                         }`}
                       >
-                        <div className="font-medium">{event.client.nickname || event.client.name}</div>
-                        <div className="text-[10px] opacity-75">{event.phase.label}</div>
+                        <div className="font-medium">{event.client.nickname || event.client.name || event.client.child_name}</div>
+                        <div className="text-[10px] opacity-75">{event.label}</div>
                       </div>
                     ))}
                   </div>

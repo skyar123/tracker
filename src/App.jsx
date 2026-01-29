@@ -140,14 +140,6 @@ const CLIENT_STATUSES = {
   }
 };
 
-// Assessment Dependencies - assessments that require prerequisites
-const ASSESSMENT_DEPENDENCIES = {
-  'base_ccis': ['base_intake', 'base_hope'], // CCIS requires intake and HOPE observations
-  'base_mchat_fu': ['base_mchat'], // Follow-up requires initial M-CHAT
-  '6mo_ccis': ['base_ccis'], // 6-month CCIS requires baseline
-  'dc_ccis': ['6mo_ccis'], // Discharge CCIS requires 6-month
-};
-
 // Activity Log Types
 const ACTIVITY_TYPES = {
   CLIENT_ADDED: 'client_added',
@@ -587,15 +579,6 @@ const getDueDateReminderStatus = (daysUntil, isOverdue) => {
   return { status: 'normal', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' };
 };
 
-// Helper: Check if assessment dependencies are met
-const checkAssessmentDependencies = (client, assessmentKey) => {
-  const dependencies = ASSESSMENT_DEPENDENCIES[assessmentKey];
-  if (!dependencies) return { met: true, missing: [] };
-  
-  const missing = dependencies.filter(dep => !isAssessmentComplete(getAssessment(client, dep)));
-  return { met: missing.length === 0, missing };
-};
-
 // Helper: Calculate progress percentage for a phase
 const calculatePhaseProgress = (client, phase) => {
   let total = 0;
@@ -604,37 +587,29 @@ const calculatePhaseProgress = (client, phase) => {
   
   if (phase === 'baseline') {
     const baselineItems = BASELINE_PROTOCOL.flatMap(w => w.items);
-    const isPregnant = client.type === 'pregnant';
-    
     baselineItems.forEach(item => {
       // Skip asq3 and mchat from protocol - they're handled separately as age-specific
-      // Also explicitly skip for pregnant clients to prevent any counting
       if (item.id === 'asq3' || item.id === 'mchat') return;
-      // Additional safeguard: never count ASQ-3 for pregnant clients
-      if (item.id === 'asq3' && isPregnant) return;
       total++;
       if (isAssessmentComplete(getAssessment(client, `base_${item.id}`))) completed++;
     });
-    
-    // Add age-specific items (only for non-pregnant clients)
-    // Pregnant clients should NEVER have ASQ-3, M-CHAT, or child-specific SE tools counted
-    if (!isPregnant) {
-      // ASQ-3 only counts if age-applicable (never for pregnant clients)
+    // Add age-specific items (only for non-pregnant)
+    if (client.type !== 'pregnant') {
+      // ASQ-3 only counts if age-applicable
       if (isASQ3Applicable(age)) { 
         total++; 
         if (isAssessmentComplete(getAssessment(client, 'base_asq3'))) completed++; 
       }
-      // M-CHAT only counts if age-required (never for pregnant clients)
+      // M-CHAT only counts if age-required
       if (isMCHATRequired(age)) { 
         total++; 
         if (isAssessmentComplete(getAssessment(client, 'base_mchat'))) completed++; 
       }
-      // SE tool (child-specific, not for pregnant clients)
+      // SE tool
       const seTool = getSETool(getAgeInMonths(client.dob || client.child_dob), age, client.type);
       total++; 
       if (isAssessmentComplete(getAssessment(client, 'base_se'))) completed++;
     }
-    // Explicit: Pregnant clients do NOT get ASQ-3, M-CHAT, or child SE tools counted
   } else if (phase === '6month') {
     FOLLOWUP_PROTOCOL.forEach(item => {
       total++;
@@ -1127,7 +1102,7 @@ const DeadlineTimeline = ({ clients }) => {
   );
 };
 
-const ClientCard = ({ client, onClick, onDelete, onEdit, linkedClient }) => {
+const ClientCard = ({ client, onClick, onDelete, onEdit, onDischarge, linkedClient }) => {
   const workload = calculateWorkload(client);
   const { phase, days, clinicianLeft, frpLeft, sharedLeft, total } = workload;
   const age = getAgeInMonths(client.dob);
@@ -1183,6 +1158,15 @@ const ClientCard = ({ client, onClick, onDelete, onEdit, linkedClient }) => {
             >
               <Edit2 className="w-4 h-4" />
             </button>
+            {(client.status || 'ACTIVE') !== 'DISCHARGED' && onDischarge && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); onDischarge(client.id); }}
+                className="text-slate-300 hover:text-slate-600 transition-all p-1"
+                title="Discharge client"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
+            )}
             <button 
               onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
               className="text-slate-300 hover:text-red-500 transition-all p-1"
@@ -2652,6 +2636,25 @@ export default function CFAssessmentManager() {
     }
   };
 
+  const dischargeClient = async (id) => {
+    const clientToDischarge = clients.find(c => c.id === id);
+    if (clientToDischarge && window.confirm(`Discharge ${clientToDischarge.nickname || clientToDischarge.name}?`)) {
+      try {
+        const oldClient = { ...clientToDischarge };
+        const updatedClient = { ...clientToDischarge, status: 'DISCHARGED' };
+        const savedClient = await api.saveClient(updatedClient);
+        setClients(clients.map(c => c.id === savedClient.id ? savedClient : c));
+        addActivity(ACTIVITY_TYPES.CLIENT_STATUS_CHANGED, 
+          `Discharged ${savedClient.nickname || savedClient.name}`, 
+          { clientId: savedClient.id, oldStatus: oldClient.status, newStatus: 'DISCHARGED' },
+          { client: oldClient });
+      } catch (error) {
+        console.error('Failed to discharge client:', error);
+        alert('Failed to discharge client. Please try again.');
+      }
+    }
+  };
+
   const deleteClient = async (id) => {
     const clientToDelete = clients.find(c => c.id === id);
     if (window.confirm("Remove this family from caseload?")) {
@@ -2674,13 +2677,6 @@ export default function CFAssessmentManager() {
 
   const toggleAssessment = async (key) => {
     if (!client) return;
-
-    // Check dependencies
-    const deps = checkAssessmentDependencies(client, key);
-    if (!deps.met) {
-      alert(`Cannot complete this assessment. Please complete these prerequisites first:\n${deps.missing.map(m => `- ${m.replace(/^(base_|6mo_|dc_|q\d_)/, '')}`).join('\n')}`);
-      return;
-    }
 
     let updatedClient = { ...client };
     const currentAssessment = getAssessment(client, key);
@@ -3024,6 +3020,7 @@ export default function CFAssessmentManager() {
                   }}
                   onEdit={handleEditClient}
                   onDelete={deleteClient}
+                  onDischarge={dischargeClient}
                   linkedClient={c.linkedId ? clients.find(x => x.id === c.linkedId) : null}
                 />
               ))}

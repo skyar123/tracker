@@ -2575,8 +2575,10 @@ export default function CFAssessmentManager() {
 
   // Save to localStorage as backup whenever clients change
   useEffect(() => {
-    if (clients.length > 0) {
+    try {
       localStorage.setItem('cf_caseload_v5', JSON.stringify(clients));
+    } catch {
+      // ignore write errors (e.g., private mode / quota)
     }
   }, [clients]);
 
@@ -2589,20 +2591,27 @@ export default function CFAssessmentManager() {
   // Actions
   const addClient = async (newClient) => {
     try {
+      setSyncStatus('syncing');
       const savedClient = await api.saveClient(newClient);
-      setClients([...clients, savedClient]);
+      setClients(prev => [...prev, savedClient]);
+      setSyncStatus('synced');
       addActivity(ACTIVITY_TYPES.CLIENT_ADDED, `Added client: ${savedClient.nickname || savedClient.name}`, { clientId: savedClient.id }, null);
     } catch (error) {
       console.error('Failed to save client:', error);
-      alert('Failed to save client. Please try again.');
+      setSyncStatus('error');
+      // Still update local state as fallback
+      setClients(prev => [...prev, newClient]);
+      alert('Failed to save to database. Changes saved locally only.');
     }
   };
 
   const updateClient = async (updatedClient) => {
     try {
       const oldClient = clients.find(c => c.id === updatedClient.id);
+      setSyncStatus('syncing');
       const savedClient = await api.saveClient(updatedClient);
-      setClients(clients.map(c => c.id === savedClient.id ? savedClient : c));
+      setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
+      setSyncStatus('synced');
       setIsEditModalOpen(false);
       setEditingClient(null);
       
@@ -2617,7 +2626,12 @@ export default function CFAssessmentManager() {
       }
     } catch (error) {
       console.error('Failed to update client:', error);
-      alert('Failed to save changes. Please try again.');
+      setSyncStatus('error');
+      // Still update local state as fallback
+      setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+      setIsEditModalOpen(false);
+      setEditingClient(null);
+      alert('Failed to save to database. Changes saved locally only.');
     }
   };
 
@@ -2642,14 +2656,17 @@ export default function CFAssessmentManager() {
       try {
         const oldClient = { ...clientToDischarge };
         const updatedClient = { ...clientToDischarge, status: 'DISCHARGED' };
+        setSyncStatus('syncing');
         const savedClient = await api.saveClient(updatedClient);
-        setClients(clients.map(c => c.id === savedClient.id ? savedClient : c));
+        setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
+        setSyncStatus('synced');
         addActivity(ACTIVITY_TYPES.CLIENT_STATUS_CHANGED, 
           `Discharged ${savedClient.nickname || savedClient.name}`, 
           { clientId: savedClient.id, oldStatus: oldClient.status, newStatus: 'DISCHARGED' },
           { client: oldClient });
       } catch (error) {
         console.error('Failed to discharge client:', error);
+        setSyncStatus('error');
         alert('Failed to discharge client. Please try again.');
       }
     }
@@ -2660,7 +2677,8 @@ export default function CFAssessmentManager() {
     if (window.confirm("Remove this family from caseload?")) {
       try {
         await api.deleteClient(id);
-        setClients(clients.filter(c => c.id !== id));
+        // Update local state
+        setClients(prev => prev.filter(c => c.id !== id));
         if (activeId === id) {
           setView('list');
           setActiveId(null);
@@ -2670,7 +2688,14 @@ export default function CFAssessmentManager() {
         }
       } catch (error) {
         console.error('Failed to delete client:', error);
-        alert('Failed to delete client. Please try again.');
+        setSyncStatus('error');
+        // Still update local state
+        setClients(prev => prev.filter(c => c.id !== id));
+        if (activeId === id) {
+          setView('list');
+          setActiveId(null);
+        }
+        alert('Failed to delete from database. Removed locally only.');
       }
     }
   };
@@ -2713,11 +2738,14 @@ export default function CFAssessmentManager() {
       updatedClient.assessments = {};
     }
 
+    // Update local state immediately for responsiveness
+    setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
+
     // Save and update local state with the saved version (includes updatedAt)
     const previousClient = client; // Store for undo
     try {
       const savedClient = await api.saveClient(updatedClient);
-      setClients(clients.map(c => c.id === activeId ? savedClient : c));
+      setClients(prev => prev.map(c => c.id === activeId ? savedClient : c));
       
       // Log activity with previous state for undo
       if (isCurrentlyDone) {
@@ -2728,7 +2756,7 @@ export default function CFAssessmentManager() {
     } catch (error) {
       console.error('Failed to save assessment:', error);
       // Still update local state even if save fails
-      setClients(clients.map(c => c.id === activeId ? updatedClient : c));
+      setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
     }
   };
 

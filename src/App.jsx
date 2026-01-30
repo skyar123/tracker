@@ -60,13 +60,16 @@ const CUTOFFS = {
   epds: { score: '≥13', action: 'Postpartum depression', detail: 'Item 10 (self-harm thoughts) requires immediate follow-up regardless of total score.', critical: true }
 };
 
+// SNIFF must be redone every 90 days (different from other assessments which follow phase milestones).
+const SNIFF_INTERVAL_DAYS = 90;
+
 const BASELINE_PROTOCOL = [
   { 
     week: 1, 
     title: 'Engagement & History',
     items: [
       { id: 'intake', name: 'Intake / CCA', full: 'Guide to Clinical History - comprehensive family assessment', role: 'CLINICIAN', entry: 'CFCR' },
-      { id: 'sniff', name: 'SNIFF', full: 'Service Needs Inventory for Families - concrete needs assessment', role: 'FRP', entry: 'CFCR' },
+      { id: 'sniff', name: 'SNIFF', full: 'Service Needs Inventory for Families - concrete needs assessment. Redo every 90 days.', role: 'FRP', entry: 'CFCR' },
       { id: 'pq', name: 'PQ', full: 'Parent Questionnaire - risk/protective factors', role: 'CLINICIAN', entry: 'CFCR', cutoff: 'pq' },
     ]
   },
@@ -108,12 +111,12 @@ const FOLLOWUP_PROTOCOL = [
 
 const DISCHARGE_ONLY = [
   { id: 'yssf', name: 'YSSF', full: 'Youth Service Satisfaction for Families', role: 'SHARED', entry: 'CFCR' },
-  { id: 'sniff_final', name: 'SNIFF (Final)', full: 'Service Needs - closing update', role: 'FRP', entry: 'CFCR' },
+  { id: 'sniff_final', name: 'SNIFF (Final)', full: 'Service Needs - closing update (SNIFF is redone every 90 days)', role: 'FRP', entry: 'CFCR' },
 ];
 
 const QUARTERLY_PROTOCOL = [
-  { id: 'sniff', name: 'SNIFF Update', full: 'Update service needs and concrete supports', role: 'FRP', entry: 'CFCR' },
-  { id: 'tx', name: 'Treatment Plan Review', full: 'Review goals with caregiver signatures', role: 'CLINICIAN', entry: 'CFCR' },
+  { id: 'sniff', name: 'SNIFF Update', full: 'Update service needs and concrete supports — required every 90 days', role: 'FRP', entry: 'CFCR' },
+  { id: 'tx', name: 'Treatment Plan Review', full: 'Review goals with caregiver signatures (Q1 & Q3 only)', role: 'CLINICIAN', entry: 'CFCR' },
 ];
 
 // Client Status Configuration
@@ -504,9 +507,13 @@ const calculateWorkload = (client) => {
   } else if (phase.id === 'sixMonth') {
     FOLLOWUP_PROTOCOL.forEach(item => countItem(item, '6mo'));
     if (!isAssessmentComplete(getAssessment(client, '6mo_se'))) frpLeft++;
+    // SNIFF every 90 days: q2_sniff due at day 180
+    if (!isAssessmentComplete(getAssessment(client, 'q2_sniff'))) frpLeft++;
   } else if (phase.id === 'q1' || phase.id === 'q3') {
     const prefix = phase.id;
     QUARTERLY_PROTOCOL.forEach(item => countItem(item, prefix));
+    // In Q3, q2_sniff (day 180) is also due if not done
+    if (phase.id === 'q3' && !isAssessmentComplete(getAssessment(client, 'q2_sniff'))) frpLeft++;
   } else if (phase.id === 'annual') {
     DISCHARGE_ONLY.forEach(item => countItem(item, 'dc'));
     FOLLOWUP_PROTOCOL.forEach(item => countItem(item, 'dc'));
@@ -2468,6 +2475,7 @@ export default function CFAssessmentManager() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedClients, setSelectedClients] = useState(new Set());
+  const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
 
   // Load clients and activity log from localStorage on mount
   useEffect(() => {
@@ -3142,8 +3150,9 @@ export default function CFAssessmentManager() {
                         {key.startsWith('base_') ? 'Baseline' : 
                          key.startsWith('6mo_') ? '6-Month' : 
                          key.startsWith('dc_') ? 'Discharge' : 
-                         key.startsWith('q1_') ? 'Q1' :
-                         key.startsWith('q3_') ? 'Q3' : 'Other'}
+                         key.startsWith('q1_') ? 'Q1 (90d)' :
+                         key.startsWith('q2_') ? 'Q2 (180d SNIFF)' :
+                         key.startsWith('q3_') ? 'Q3 (270d)' : 'Other'}
                       </td>
                       <td className="py-2">{formatDate(date, 'long')}</td>
                     </tr>
@@ -3421,51 +3430,71 @@ export default function CFAssessmentManager() {
                   <RefreshCw className="w-4 h-4" /> Quarterly Requirements
                 </h3>
                 <p className="text-sm text-teal-700">
-                  Every 90 days: Update SNIFF concrete needs and review Treatment Plan with caregiver signatures.
+                  <strong>SNIFF must be redone every 90 days</strong> (at 90, 180, 270 days) — different from other documents. Treatment Plan Review is at Q1 (90d) and Q3 (270d) only.
                 </p>
               </div>
 
-              {[1, 3].map(q => {
-                const qDay = q === 1 ? 90 : 270;
-                const prefix = `q${q}_`;
+              {[
+                { q: 1, qDay: 90, prefix: 'q1_', sniffOnly: false },
+                { q: 2, qDay: 180, prefix: 'q2_', sniffOnly: true },
+                { q: 3, qDay: 270, prefix: 'q3_', sniffOnly: false },
+              ].map(({ q, qDay, prefix, sniffOnly }) => {
                 const sniffDone = isAssessmentComplete(getAssessment(client, `${prefix}sniff`));
                 const txDone = isAssessmentComplete(getAssessment(client, `${prefix}tx`));
                 const isDue = days >= qDay - 14;
-                const isComplete = sniffDone && txDone;
+                const isComplete = sniffOnly ? sniffDone : sniffDone && txDone;
 
                 return (
                   <div key={q} className={`bg-white border rounded-2xl p-4 shadow-sm ${isDue && !isComplete ? 'border-teal-200' : 'border-slate-200'}`}>
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h4 className="font-bold text-slate-800">Quarter {q}</h4>
-                        <p className="text-xs text-slate-500">Day {qDay} • Due {getDueDate(client.admitDate, qDay)}</p>
+                        <h4 className="font-bold text-slate-800">Day {qDay} {sniffOnly ? '(SNIFF every 90 days)' : `(Q${q})`}</h4>
+                        <p className="text-xs text-slate-500">Due {getDueDate(client.admitDate, qDay)}</p>
                       </div>
                       {isDue && !isComplete && <StatusBadge status="dueSoon" />}
                       {isComplete && <CheckCircle className="w-5 h-5 text-emerald-500" />}
                     </div>
                     <div className="space-y-2">
-                      {QUARTERLY_PROTOCOL.map(item => (
+                      {sniffOnly ? (
                         <button
-                          key={item.id}
-                          onClick={() => toggleAssessment(`${prefix}${item.id}`)}
+                          onClick={() => toggleAssessment(`${prefix}sniff`)}
                           className={`w-full p-3 rounded-xl border-2 flex items-center gap-3 transition-all ${
-                            isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`))
-                              ? 'bg-teal-50 border-teal-300 text-teal-800'
-                              : 'bg-white border-slate-200 text-slate-600 hover:border-teal-300'
+                            sniffDone ? 'bg-teal-50 border-teal-300 text-teal-800' : 'bg-white border-slate-200 text-slate-600 hover:border-teal-300'
                           }`}
                         >
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                            isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) ? 'bg-teal-500 border-teal-500' : 'border-slate-300'
-                          }`}>
-                            {isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) && <CheckCircle className="w-3 h-3 text-white" />}
+                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${sniffDone ? 'bg-teal-500 border-teal-500' : 'border-slate-300'}`}>
+                            {sniffDone && <CheckCircle className="w-3 h-3 text-white" />}
                           </div>
                           <div className="flex-1 text-left">
-                            <span className="font-semibold text-sm">{item.name}</span>
-                            <span className="text-xs text-slate-500 ml-2">{item.full}</span>
+                            <span className="font-semibold text-sm">SNIFF Update</span>
+                            <span className="text-xs text-slate-500 ml-2">Required every 90 days</span>
                           </div>
-                          <RoleBadge roleKey={item.role} size="xs" />
+                          <RoleBadge roleKey="FRP" size="xs" />
                         </button>
-                      ))}
+                      ) : (
+                        QUARTERLY_PROTOCOL.map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => toggleAssessment(`${prefix}${item.id}`)}
+                            className={`w-full p-3 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                              isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`))
+                                ? 'bg-teal-50 border-teal-300 text-teal-800'
+                                : 'bg-white border-slate-200 text-slate-600 hover:border-teal-300'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
+                              isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) ? 'bg-teal-500 border-teal-500' : 'border-slate-300'
+                            }`}>
+                              {isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`)) && <CheckCircle className="w-3 h-3 text-white" />}
+                            </div>
+                            <div className="flex-1 text-left">
+                              <span className="font-semibold text-sm">{item.name}</span>
+                              <span className="text-xs text-slate-500 ml-2">{item.full}</span>
+                            </div>
+                            <RoleBadge roleKey={item.role} size="xs" />
+                          </button>
+                        ))
+                      )}
                     </div>
                   </div>
                 );

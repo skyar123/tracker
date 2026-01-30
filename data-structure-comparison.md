@@ -50,9 +50,13 @@ baseline_assessments: {
 ### App Structure
 ```javascript
 assessments: {
-  "base_sniff": "2025-04-27"  // Just date string, no upload tracking
+  "base_sniff": "2025-04-27",  // Baseline; SNIFF is redone every 90 days (q1_sniff, q2_sniff, q3_sniff at 90, 180, 270d)
+  "q1_sniff": "2025-07-01",
+  "q2_sniff": "2025-09-29",
+  "q3_sniff": "2026-01-01"
 }
 ```
+**Note:** SNIFF must be redone every 90 days (different from other documents). Keys: `base_sniff`, `q1_sniff` (90d), `q2_sniff` (180d), `q3_sniff` (270d).
 
 ## Key Missing Features in App
 

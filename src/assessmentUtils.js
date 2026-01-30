@@ -181,9 +181,15 @@ export function mapOldKeyToNewName(oldKey) {
     '6mo_yssf': 'YSSF',
     '6mo_sniff': 'SNIFF',
     '6mo_ycpc': 'YCPC',
+    // SNIFF every 90 days: q1 (90d), q2 (180d), q3 (270d)
+    'q1_sniff': 'SNIFF',
+    'q1_tx': 'Treatment Plan',
+    'q2_sniff': 'SNIFF (90d)',
+    'q3_sniff': 'SNIFF',
+    'q3_tx': 'Treatment Plan',
   };
   
-  return mapping[oldKey] || oldKey.replace(/^(base_|6mo_|dc_)/, '').toUpperCase();
+  return mapping[oldKey] || oldKey.replace(/^(base_|6mo_|dc_|q\d_)/, '').toUpperCase();
 }
 
 /**

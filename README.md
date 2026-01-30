@@ -7,7 +7,7 @@ A comprehensive React application for tracking assessment protocols, deadlines, 
 ## Features
 
 - **Caseload Management**: Track multiple families with assessment protocols
-- **Phase Tracking**: Baseline, Quarterly, 6-Month, and Discharge phases
+- **Phase Tracking**: Baseline, Quarterly, 6-Month, and Discharge phases (SNIFF redone every 90 days)
 - **Role-Based Filtering**: Separate views for Clinician, FRP, and Shared responsibilities
 - **Deadline Timeline**: Visual timeline of upcoming assessment deadlines
 - **Age-Specific Tools**: Automatic tool selection based on child's age

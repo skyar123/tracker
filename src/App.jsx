@@ -155,6 +155,8 @@ const ACTIVITY_TYPES = {
 };
 
 // Real client data
+const DATA_VERSION = 'caseload-v2';
+
 const INITIAL_CLIENTS = [
   {
     id: "paxton-cody",
@@ -2421,11 +2423,20 @@ export default function CFAssessmentManager() {
     const loadClients = async () => {
       try {
         setLoading(true);
+        const currentVersion = localStorage.getItem('cf_data_version');
         const data = await api.getClients();
-        if (data.length === 0) {
+
+        if (currentVersion !== DATA_VERSION) {
+          // One-time migration: replace any existing caseload with new INITIAL_CLIENTS
+          await api.migrateData(INITIAL_CLIENTS);
+          localStorage.setItem('cf_data_version', DATA_VERSION);
           setClients(INITIAL_CLIENTS);
         } else {
-          setClients(data);
+          if (data.length === 0) {
+            setClients(INITIAL_CLIENTS);
+          } else {
+            setClients(data);
+          }
         }
         // Load activity log
         const savedLog = localStorage.getItem('cf_activity_log');

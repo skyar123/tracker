@@ -157,205 +157,121 @@ const ACTIVITY_TYPES = {
 // Real client data
 const INITIAL_CLIENTS = [
   {
-    id: "ezra-guernsey",
-    name: "Ezra Guernsey",
-    nickname: "Bubbles",
-    dob: "2023-01-24",
-    admitDate: "2025-04-02",
+    id: "paxton-cody",
+    name: "Paxton Cody",
+    nickname: "Paxton",
+    dob: "2021-11-09",
+    admitDate: "2025-12-16",
     type: "child",
-    caregiver: "Emily Guernsey",
+    caregiver: "",
     notes: "",
     status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-04-10",
-      base_sniff: "2025-04-27",
-      base_asq3: "2025-04-24",
-      base_mchat: "2025-05-06",
-      base_se: "2025-03-17",
-      base_tesi: "2025-05-06",
-      base_ccis: "2025-06-03",
-      base_pq: "2025-04-22",
-      base_psi: "2025-05-12",
-      base_cesdr: "2025-05-06",
-      base_lscr: "2025-05-06",
-      base_pcl5: "2025-05-06",
-      base_hope: "2025-05-22",
-      "6mo_asq3": "2025-09-30",
-      "6mo_se": "2025-09-30",
-      "6mo_ccis": "2025-09-22",
-      "6mo_psi": "2025-10-02",
-      "6mo_cesdr": "2025-09-30",
-      "6mo_pcl5": "2025-09-30"
-    }
+    customFields: { caseloadId: "23635", sex: "M" },
+    assessments: {}
   },
   {
-    id: "kaizen-reyes",
-    name: "Kaizen Reyes",
-    nickname: "Birdie",
-    dob: "2021-06-05",
-    admitDate: "2025-07-17",
+    id: "gracelyn-gosnell",
+    name: "Gracelyn Gosnell",
+    nickname: "Gracelyn",
+    dob: "2021-11-28",
+    admitDate: "2026-02-04",
     type: "child",
-    caregiver: "Gracie Griffin",
-    notes: "Sensory concerns - completed SSP2",
-    status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-07-24",
-      base_sniff: "2025-08-06",
-      base_asq3: "2025-10-06",
-      base_sensory: "2025-08-21",
-      base_se: "2025-08-21",
-      base_tesi: "2025-08-28",
-      base_ccis: "2025-09-22",
-      base_pq: "2025-07-17",
-      base_psi: "2025-08-21",
-      base_cesdr: "2025-08-28",
-      base_lscr: "2025-08-28",
-      base_pcl5: "2025-08-28",
-      base_hope: "2025-09-06"
-    }
-  },
-  {
-    id: "harlie-yoder",
-    name: "Harlie Yoder",
-    nickname: "Mermaid",
-    dob: "2023-04-06",
-    admitDate: "2025-04-17",
-    type: "child",
-    caregiver: "Sabrina Crain",
+    caregiver: "",
     notes: "",
     status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-05-02",
-      base_sniff: "2025-05-28",
-      base_asq3: "2025-06-12",
-      base_mchat: "2025-06-05",
-      base_se: "2025-06-05",
-      base_tesi: "2025-05-29",
-      base_ccis: "2025-07-21",
-      base_pq: "2025-04-18",
-      base_psi: "2025-05-29",
-      base_cesdr: "2025-05-29",
-      base_lscr: "2025-05-29",
-      base_pcl5: "2025-05-29",
-      base_hope: "2025-07-15",
-      "6mo_asq3": "2025-11-04",
-      "6mo_se": "2025-11-04",
-      "6mo_psi": "2025-11-04"
-    }
+    customFields: { caseloadId: "21785", sex: "F" },
+    assessments: {}
   },
   {
-    id: "skylar-parker",
-    name: "Skylar Parker",
-    nickname: "Firecracker",
-    dob: "2021-05-06",
-    admitDate: "2025-09-03",
+    id: "frances-griffinboseman",
+    name: "Frances GriffinBoseman",
+    nickname: "Frances",
+    dob: "2022-12-17",
+    admitDate: "2026-02-19",
     type: "child",
-    caregiver: "Amanda Haney",
-    notes: "Working on sensory regulation strategies",
+    caregiver: "",
+    notes: "",
     status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-09-15",
-      base_sniff: "2025-09-11",
-      base_asq3: "2025-09-25",
-      base_sensory: "2025-09-25",
-      base_se: "2025-09-29",
-      base_tesi: "2025-10-06",
-      base_ccis: "2025-09-29",
-      base_pq: "2025-09-03",
-      base_psi: "2025-09-24",
-      base_cesdr: "2025-10-06",
-      base_lscr: "2025-10-06",
-      base_pcl5: "2025-10-06",
-      base_hope: "2025-10-13"
-    }
-  },
-  {
-    id: "gracie-proffitt",
-    name: "Gracie Proffitt",
-    nickname: "Puppy",
-    dob: "2023-02-13",
-    admitDate: "2025-12-15",
-    type: "child",
-    caregiver: "Rhonda Proffitt",
-    linkedId: "kayden-proffitt",
-    notes: "Twin - sibling case with Kayden",
-    status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-12-29",
-      base_pq: "2025-12-15"
-    }
-  },
-  {
-    id: "kayden-proffitt",
-    name: "Kayden Proffitt",
-    nickname: "Peanut",
-    dob: "2023-02-13",
-    admitDate: "2025-12-15",
-    type: "child",
-    caregiver: "Rhonda Proffitt",
-    linkedId: "gracie-proffitt",
-    notes: "Twin - sibling case with Gracie",
-    status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-12-29",
-      base_asq3: "2026-01-05",
-      base_mchat: "2026-01-05",
-      base_pq: "2025-12-15",
-      base_hope: "2026-01-05"
-    }
-  },
-  {
-    id: "nylah-harper",
-    name: "Nylah Harper",
-    nickname: "Fairy",
-    dob: "2020-12-17",
-    admitDate: "2025-12-01",
-    type: "child",
-    caregiver: "Nikiria Harper",
-    notes: "New intake - building rapport",
-    status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-12-01"
-    }
+    customFields: { caseloadId: "24095", sex: "F" },
+    assessments: {}
   },
   {
     id: "royce-molina",
     name: "Royce Molina",
-    nickname: "Turtle",
+    nickname: "Royce",
     dob: "2022-03-12",
     admitDate: "2025-12-16",
     type: "child",
-    caregiver: "Hillary Ridenhour",
+    caregiver: "",
     notes: "",
     status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_intake: "2025-12-31",
-      base_sniff: "2025-12-29",
-      base_pq: "2025-12-16"
-    }
+    customFields: { caseloadId: "23449", sex: "M" },
+    assessments: {}
   },
   {
-    id: "paxton-cody",
-    name: "Paxton Cody",
-    nickname: "Milkshake",
-    dob: "2021-11-09",
-    admitDate: "2025-12-16",
+    id: "skylar-parker",
+    name: "Skylar Parker",
+    nickname: "Skylar",
+    dob: "2021-05-06",
+    admitDate: "2025-09-03",
     type: "child",
-    caregiver: "Alyssa Brickett",
-    notes: "Early engagement phase",
+    caregiver: "",
+    notes: "",
     status: "ACTIVE",
-    customFields: {},
-    assessments: {
-      base_pq: "2025-12-16"
-    }
+    customFields: { caseloadId: "22674", sex: "F" },
+    assessments: {}
+  },
+  {
+    id: "kaizen-reyes",
+    name: "Kaizen Reyes",
+    nickname: "Kaizen",
+    dob: "2021-06-05",
+    admitDate: "2025-07-17",
+    type: "child",
+    caregiver: "",
+    notes: "",
+    status: "ACTIVE",
+    customFields: { caseloadId: "22377", sex: "M" },
+    assessments: {}
+  },
+  {
+    id: "jacob-steinhoffbrown",
+    name: "Jacob SteinhoffBrown",
+    nickname: "Jacob",
+    dob: "2024-03-21",
+    admitDate: "",
+    type: "child",
+    caregiver: "",
+    notes: "Not Admitted",
+    status: "ON_HOLD",
+    customFields: { caseloadId: "24166", sex: "M" },
+    assessments: {}
+  },
+  {
+    id: "ashton-thorton",
+    name: "Ashton Thorton",
+    nickname: "Ashton",
+    dob: "2020-10-03",
+    admitDate: "",
+    type: "child",
+    caregiver: "",
+    notes: "Not Admitted",
+    status: "ON_HOLD",
+    customFields: { caseloadId: "21482", sex: "M" },
+    assessments: {}
+  },
+  {
+    id: "harlie-yoder",
+    name: "Harlie Yoder",
+    nickname: "Harlie",
+    dob: "2023-04-06",
+    admitDate: "2025-04-17",
+    type: "child",
+    caregiver: "",
+    notes: "",
+    status: "ACTIVE",
+    customFields: { caseloadId: "21705", sex: "F" },
+    assessments: {}
   }
 ];
 
@@ -365,8 +281,10 @@ const INITIAL_CLIENTS = [
 
 const getAgeInMonths = (dob, refDate = new Date()) => {
   if (!dob) return 0;
-  const ref = new Date(refDate);
+  const ref = refDate ? new Date(refDate) : new Date();
+  if (Number.isNaN(ref.getTime())) return 0;
   const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return 0;
   let months = (ref.getFullYear() - birth.getFullYear()) * 12;
   months -= birth.getMonth();
   months += ref.getMonth();
@@ -400,7 +318,9 @@ const getDueDate = (admitDate, days, format = 'short') => {
 };
 
 const getDaysUntilDue = (admitDate, dueDays) => {
+  if (!admitDate) return null;
   const dueDate = new Date(addDays(admitDate, dueDays));
+  if (Number.isNaN(dueDate.getTime())) return null;
   const today = new Date();
   return Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
 };
@@ -430,6 +350,19 @@ const isASQ3Applicable = (ageMonths) => ageMonths >= 1 && ageMonths <= 66;
 // ============================================================================
 
 const getPhaseInfo = (client, days) => {
+  if (!client.admitDate && !client.intake_date) {
+    return {
+      id: 'notAdmitted',
+      label: 'Not Admitted',
+      color: 'bg-amber-100 text-amber-700',
+      accent: 'amber',
+      dueDays: 0,
+      dueDate: 'N/A',
+      daysUntil: null,
+      isOverdue: false
+    };
+  }
+
   const baseComplete = isBaselineComplete(client);
   
   if (!baseComplete) {
@@ -662,6 +595,9 @@ const getInitialPhase = (client) => {
 };
 
 const UrgencyIndicator = ({ daysUntil, isOverdue }) => {
+  if (daysUntil == null) {
+    return <span className="text-xs text-slate-400">N/A</span>;
+  }
   if (isOverdue) {
     return <span className="text-xs font-bold text-red-600">{Math.abs(daysUntil)}d overdue</span>;
   }
@@ -892,7 +828,9 @@ const DeadlineTimeline = ({ clients }) => {
   const today = new Date();
   const timelineData = useMemo(() => {
     // Get all upcoming deadlines
-    const deadlines = clients.map(c => {
+    const deadlines = clients
+      .filter(c => !!(c.admitDate || c.intake_date))
+      .map(c => {
       const workload = calculateWorkload(c);
       const dueDate = new Date(addDays(c.admitDate, workload.phase.dueDays));
       const daysUntil = workload.phase.daysUntil;
@@ -1285,7 +1223,7 @@ const BackupModal = ({ isOpen, onClose, clients, onRestore }) => {
         }
 
         // Validate each client has required fields
-        const requiredFields = ['id', 'name', 'admitDate', 'type', 'assessments'];
+        const requiredFields = ['id', 'name', 'type', 'assessments'];
         for (const client of data.clients) {
           for (const field of requiredFields) {
             if (!(field in client)) {
@@ -1467,7 +1405,7 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
   if (!isOpen || !client) return null;
 
   const handleSave = () => {
-    if (data.name && data.admitDate) {
+    if (data.name && (data.admitDate || data.status === 'ON_HOLD')) {
       onSave({
         ...client,
         ...data
@@ -1850,7 +1788,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
   if (!isOpen) return null;
 
   const handleSave = () => {
-    if (data.name && data.admitDate) {
+    if (data.name && (data.admitDate || data.status === 'ON_HOLD')) {
       onSave({
         ...data,
         id: Date.now().toString(),

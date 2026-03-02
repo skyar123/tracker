@@ -243,7 +243,7 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "",
     notes: "Not Admitted",
-    status: "ON_HOLD",
+    status: "ACTIVE",
     customFields: { caseloadId: "24166", sex: "M" },
     assessments: {}
   },
@@ -256,7 +256,7 @@ const INITIAL_CLIENTS = [
     type: "child",
     caregiver: "",
     notes: "Not Admitted",
-    status: "ON_HOLD",
+    status: "ACTIVE",
     customFields: { caseloadId: "21482", sex: "M" },
     assessments: {}
   },
@@ -831,8 +831,9 @@ const DeadlineTimeline = ({ clients }) => {
     const deadlines = clients
       .filter(c => !!(c.admitDate || c.intake_date))
       .map(c => {
+      const startDate = c.admitDate || c.intake_date;
       const workload = calculateWorkload(c);
-      const dueDate = new Date(addDays(c.admitDate, workload.phase.dueDays));
+      const dueDate = new Date(addDays(startDate, workload.phase.dueDays));
       const daysUntil = workload.phase.daysUntil;
       return {
         client: c,
@@ -1405,7 +1406,7 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
   if (!isOpen || !client) return null;
 
   const handleSave = () => {
-    if (data.name && (data.admitDate || data.status === 'ON_HOLD')) {
+    if (data.name) {
       onSave({
         ...client,
         ...data
@@ -1788,7 +1789,7 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
   if (!isOpen) return null;
 
   const handleSave = () => {
-    if (data.name && (data.admitDate || data.status === 'ON_HOLD')) {
+    if (data.name) {
       onSave({
         ...data,
         id: Date.now().toString(),

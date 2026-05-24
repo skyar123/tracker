@@ -9,6 +9,7 @@ import {
   Bell, BellOff, Calendar as CalendarIcon, BarChart3, History, Undo2,
   Settings, Layers, CheckSquare, FileSpreadsheet
 } from 'lucide-react';
+import AssessmentEntryModal from './AssessmentEntryModal.jsx';
 import { api } from './api.js';
 import { 
   getAssessment, 
@@ -298,6 +299,22 @@ const is6MonthComplete = (client) => {
   return required.every(id => isAssessmentComplete(getAssessment(client, `6mo_${id}`)));
 };
 
+export const getDynamicSniffDueDate = (client, q) => {
+    let baseDateStr = getAssessmentDate(getAssessment(client, 'base_sniff')) || client.admitDate;
+    if (!baseDateStr) return null;
+    let currentDate = new Date(baseDateStr);
+    
+    for (let i = 1; i <= q; i++) {
+      let prevKey = i === 1 ? 'base_sniff' : `q${i-1}_sniff`;
+      let prevDateStr = getAssessmentDate(getAssessment(client, prevKey));
+      if (prevDateStr) {
+         currentDate = new Date(prevDateStr);
+      }
+      currentDate = new Date(currentDate.getTime() + 90 * 24*60*60*1000);
+    }
+    return currentDate.toISOString().split('T')[0];
+  };
+
 const calculateWorkload = (client) => {
   const days = getDaysInService(client.admitDate || client.intake_date);
   const phase = getPhaseInfo(client, days);
@@ -319,24 +336,38 @@ const calculateWorkload = (client) => {
 
   if (phase.id === 'baseline') {
     BASELINE_PROTOCOL.forEach(week => week.items.forEach(item => countItem(item, 'base')));
-    // SE tool
     if (!isAssessmentComplete(getAssessment(client, 'base_se'))) frpLeft++;
-    // M-CHAT
     if (isMCHATRequired(ageAtAdmit) && !isAssessmentComplete(getAssessment(client, 'base_mchat'))) frpLeft++;
   } else if (phase.id === 'sixMonth') {
     FOLLOWUP_PROTOCOL.forEach(item => countItem(item, '6mo'));
     if (!isAssessmentComplete(getAssessment(client, '6mo_se'))) frpLeft++;
-    // SNIFF every 90 days: q2_sniff due at day 180
-    if (!isAssessmentComplete(getAssessment(client, 'q2_sniff'))) frpLeft++;
   } else if (phase.id === 'q1' || phase.id === 'q3') {
     const prefix = phase.id;
     QUARTERLY_PROTOCOL.forEach(item => countItem(item, prefix));
-    // In Q3, q2_sniff (day 180) is also due if not done
-    if (phase.id === 'q3' && !isAssessmentComplete(getAssessment(client, 'q2_sniff'))) frpLeft++;
   } else if (phase.id === 'annual') {
     DISCHARGE_ONLY.forEach(item => countItem(item, 'dc'));
     FOLLOWUP_PROTOCOL.forEach(item => countItem(item, 'dc'));
   }
+
+  // Dynamic SNIFF Due Check across all phases
+  const today = new Date();
+  let anySniffDue = false;
+  // We check q1, q2, q3 sniffs to see if any are due today
+  for (let q = 1; q <= 3; q++) {
+    const prefix = `q${q}_sniff`;
+    if (!isAssessmentComplete(getAssessment(client, prefix))) {
+      const dynamicSniffDueStr = getDynamicSniffDueDate(client, q);
+      if (dynamicSniffDueStr) {
+        const sniffDueDiffDays = (new Date(dynamicSniffDueStr) - today) / (1000 * 60 * 60 * 24);
+        if (sniffDueDiffDays <= 14) {
+          anySniffDue = true;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (anySniffDue) frpLeft++;
 
   const total = clinicianLeft + frpLeft + sharedLeft;
   
@@ -351,7 +382,8 @@ const RoleBadge = ({ roleKey, size = 'sm' }) => {
   const config = ROLES[roleKey];
   const Icon = config.icon;
   if (size === 'xs') {
-    return (
+  
+  return (
       <span className={`inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded font-bold uppercase ${config.color}`}>
         <Icon className="w-2.5 h-2.5" />
       </span>
@@ -2552,15 +2584,14 @@ export default function CFAssessmentManager() {
     }
   };
 
-  const toggleAssessment = async (key) => {
-    if (!client) return;
+  const [assessmentModal, setAssessmentModal] = useState({ isOpen: false, key: null, def: null });
 
-    let updatedClient = { ...client };
+  const openAssessmentModal = (key, def = null) => {
+    if (!client) return;
     const currentAssessment = getAssessment(client, key);
     const isCurrentlyDone = isAssessmentComplete(currentAssessment);
-    const today = new Date().toISOString().split('T')[0];
-
-    // M-CHAT special handling
+    
+    // M-CHAT special check: keep it here before opening modal
     if (key === 'base_mchat' && !isCurrentlyDone) {
       const isHighRisk = window.confirm(
         "M-CHAT-R/F Score Check:\n\n" +
@@ -2571,43 +2602,49 @@ export default function CFAssessmentManager() {
         "Click OK if score was 3 or higher."
       );
       
-      // Use setAssessment utility to handle both formats
-      setAssessment(updatedClient, key, { completed: today, uploaded: null });
+      let updatedClient = { ...client };
+      setAssessment(updatedClient, key, { completed: new Date().toISOString().split('T')[0], uploaded: null });
       updatedClient.mchatHighRisk = isHighRisk;
-    } else {
-      // Toggle completion - use new format with upload tracking
-      if (isCurrentlyDone) {
-        // Uncomplete - remove assessment
-        setAssessment(updatedClient, key, null);
-      } else {
-        // Complete - add with today's date, not uploaded yet
-        setAssessment(updatedClient, key, { completed: today, uploaded: null });
-      }
+      saveClientData(updatedClient, key, isCurrentlyDone);
+      return;
     }
 
-    // Ensure assessments object exists for backward compatibility
+    setAssessmentModal({ isOpen: true, key, def });
+  };
+
+  const handleSaveAssessment = async (key, payload) => {
+    if (!client) return;
+    
+    let updatedClient = { ...client };
+    const currentAssessment = getAssessment(client, key);
+    const isCurrentlyDone = isAssessmentComplete(currentAssessment);
+
+    setAssessment(updatedClient, key, payload);
+    await saveClientData(updatedClient, key, isCurrentlyDone);
+  };
+
+  const saveClientData = async (updatedClient, key, wasCurrentlyDone) => {
     if (!updatedClient.assessments) {
       updatedClient.assessments = {};
     }
 
-    // Update local state immediately for responsiveness
     setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
 
-    // Save and update local state with the saved version (includes updatedAt)
-    const previousClient = client; // Store for undo
+    const previousClient = client;
     try {
       const savedClient = await api.saveClient(updatedClient);
       setClients(prev => prev.map(c => c.id === activeId ? savedClient : c));
       
-      // Log activity with previous state for undo
-      if (isCurrentlyDone) {
+      const payloadObj = getAssessment(savedClient, key);
+      const isNowDone = isAssessmentComplete(payloadObj);
+      
+      if (wasCurrentlyDone && !isNowDone) {
         addActivity(ACTIVITY_TYPES.ASSESSMENT_UNCOMPLETED, `Uncompleted ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key }, { client: previousClient });
-      } else {
+      } else if (!wasCurrentlyDone && isNowDone) {
         addActivity(ACTIVITY_TYPES.ASSESSMENT_COMPLETED, `Completed ${key.replace(/^(base_|6mo_|dc_|q\d_)/, '')} for ${client.nickname || client.name}`, { clientId: client.id, assessment: key }, { client: previousClient });
       }
     } catch (error) {
       console.error('Failed to save assessment:', error);
-      // Still update local state even if save fails
       setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
     }
   };
@@ -3192,7 +3229,7 @@ export default function CFAssessmentManager() {
                           isChecked={isAssessmentComplete(getAssessment(client, `base_${item.id}`))}
                           dateCompleted={getAssessmentDate(getAssessment(client, `base_${item.id}`))}
                           isUploaded={isAssessmentUploaded(getAssessment(client, `base_${item.id}`))}
-                          onToggle={() => toggleAssessment(`base_${item.id}`)}
+                          onToggle={() => openAssessmentModal(`base_${item.id}`)}
                           onToggleUpload={() => toggleUpload(`base_${item.id}`)}
                           isOverdue={weekOverdue}
                           roleFilter={roleFilter}
@@ -3212,7 +3249,7 @@ export default function CFAssessmentManager() {
                       isChecked={isAssessmentComplete(getAssessment(client, 'base_se'))}
                       dateCompleted={getAssessmentDate(getAssessment(client, 'base_se'))}
                       isUploaded={isAssessmentUploaded(getAssessment(client, 'base_se'))}
-                      onToggle={() => toggleAssessment('base_se')}
+                      onToggle={() => openAssessmentModal('base_se')}
                       onToggleUpload={() => toggleUpload('base_se')}
                       roleFilter={roleFilter}
                       showNote={seTool.continuity ? 'Continuity Rule: Started under 12mo, staying with ASQ:SE-2 throughout service' : null}
@@ -3225,7 +3262,7 @@ export default function CFAssessmentManager() {
                           isChecked={isAssessmentComplete(getAssessment(client, 'base_mchat'))}
                           dateCompleted={getAssessmentDate(getAssessment(client, 'base_mchat'))}
                           isUploaded={isAssessmentUploaded(getAssessment(client, 'base_mchat'))}
-                          onToggle={() => toggleAssessment('base_mchat')}
+                          onToggle={() => openAssessmentModal('base_mchat')}
                           onToggleUpload={() => toggleUpload('base_mchat')}
                           roleFilter={roleFilter}
                         />
@@ -3236,7 +3273,7 @@ export default function CFAssessmentManager() {
                             isChecked={isAssessmentComplete(getAssessment(client, 'base_mchat_fu'))}
                             dateCompleted={getAssessmentDate(getAssessment(client, 'base_mchat_fu'))}
                             isUploaded={isAssessmentUploaded(getAssessment(client, 'base_mchat_fu'))}
-                            onToggle={() => toggleAssessment('base_mchat_fu')}
+                            onToggle={() => openAssessmentModal('base_mchat_fu')}
                             onToggleUpload={() => toggleUpload('base_mchat_fu')}
                             roleFilter={roleFilter}
                             showNote="Score ≥8 = High Risk: also complete Sensory Profile and make immediate referral"
@@ -3255,7 +3292,7 @@ export default function CFAssessmentManager() {
                   isChecked={isAssessmentComplete(getAssessment(client, 'base_sensory'))}
                   dateCompleted={getAssessmentDate(getAssessment(client, 'base_sensory'))}
                   isUploaded={isAssessmentUploaded(getAssessment(client, 'base_sensory'))}
-                  onToggle={() => toggleAssessment('base_sensory')}
+                  onToggle={() => openAssessmentModal('base_sensory')}
                   onToggleUpload={() => toggleUpload('base_sensory')}
                   roleFilter={roleFilter}
                 />
@@ -3265,7 +3302,7 @@ export default function CFAssessmentManager() {
                   isChecked={isAssessmentComplete(getAssessment(client, 'base_epds'))}
                   dateCompleted={getAssessmentDate(getAssessment(client, 'base_epds'))}
                   isUploaded={isAssessmentUploaded(getAssessment(client, 'base_epds'))}
-                  onToggle={() => toggleAssessment('base_epds')}
+                  onToggle={() => openAssessmentModal('base_epds')}
                   onToggleUpload={() => toggleUpload('base_epds')}
                   roleFilter={roleFilter}
                 />
@@ -3292,15 +3329,32 @@ export default function CFAssessmentManager() {
               ].map(({ q, qDay, prefix, sniffOnly }) => {
                 const sniffDone = isAssessmentComplete(getAssessment(client, `${prefix}sniff`));
                 const txDone = isAssessmentComplete(getAssessment(client, `${prefix}tx`));
-                const isDue = days >= qDay - 14;
+                
+                // Dynamic SNIFF calculation
+                const dynamicSniffDueStr = getDynamicSniffDueDate(client, q);
+                const dynamicSniffDue = new Date(dynamicSniffDueStr);
+                const today = new Date();
+                const sniffDueDiffDays = (dynamicSniffDue - today) / (1000 * 60 * 60 * 24);
+                const isSniffDue = sniffDueDiffDays <= 14;
+                
+                // TX is still fixed milestones (90, 270)
+                const isTxDue = days >= qDay - 14;
+                
+                const isDue = sniffOnly ? isSniffDue : (isSniffDue || isTxDue);
                 const isComplete = sniffOnly ? sniffDone : sniffDone && txDone;
 
                 return (
                   <div key={q} className={`bg-white border rounded-2xl p-4 shadow-sm ${isDue && !isComplete ? 'border-teal-200' : 'border-slate-200'}`}>
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h4 className="font-bold text-slate-800">Day {qDay} {sniffOnly ? '(SNIFF every 90 days)' : `(Q${q})`}</h4>
-                        <p className="text-xs text-slate-500">Due {getDueDate(client.admitDate, qDay)}</p>
+                        <h4 className="font-bold text-slate-800">
+                          {sniffOnly ? `SNIFF Update #${q}` : `Quarter ${q}`}
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          {sniffOnly 
+                            ? `Due ${dynamicSniffDueStr}` 
+                            : `TX Due: ${getDueDate(client.admitDate, qDay)} | SNIFF Due: ${dynamicSniffDueStr}`}
+                        </p>
                       </div>
                       {isDue && !isComplete && <StatusBadge status="dueSoon" />}
                       {isComplete && <CheckCircle className="w-5 h-5 text-emerald-500" />}
@@ -3308,7 +3362,7 @@ export default function CFAssessmentManager() {
                     <div className="space-y-2">
                       {sniffOnly ? (
                         <button
-                          onClick={() => toggleAssessment(`${prefix}sniff`)}
+                          onClick={() => openAssessmentModal(`${prefix}sniff`)}
                           className={`w-full p-3 rounded-xl border-2 flex items-center gap-3 transition-all ${
                             sniffDone ? 'bg-teal-50 border-teal-300 text-teal-800' : 'bg-white border-slate-200 text-slate-600 hover:border-teal-300'
                           }`}
@@ -3326,7 +3380,7 @@ export default function CFAssessmentManager() {
                         QUARTERLY_PROTOCOL.map(item => (
                           <button
                             key={item.id}
-                            onClick={() => toggleAssessment(`${prefix}${item.id}`)}
+                            onClick={() => openAssessmentModal(`${prefix}${item.id}`)}
                             className={`w-full p-3 rounded-xl border-2 flex items-center gap-3 transition-all ${
                               isAssessmentComplete(getAssessment(client, `${prefix}${item.id}`))
                                 ? 'bg-teal-50 border-teal-300 text-teal-800'
@@ -3381,7 +3435,7 @@ export default function CFAssessmentManager() {
                     isChecked={isAssessmentComplete(getAssessment(client, `6mo_${item.id}`))}
                     dateCompleted={getAssessmentDate(getAssessment(client, `6mo_${item.id}`))}
                     isUploaded={isAssessmentUploaded(getAssessment(client, `6mo_${item.id}`))}
-                    onToggle={() => toggleAssessment(`6mo_${item.id}`)}
+                    onToggle={() => openAssessmentModal(`6mo_${item.id}`)}
                     onToggleUpload={() => toggleUpload(`6mo_${item.id}`)}
                     roleFilter={roleFilter}
                   />
@@ -3393,7 +3447,7 @@ export default function CFAssessmentManager() {
                   isChecked={isAssessmentComplete(getAssessment(client, '6mo_se'))}
                   dateCompleted={getAssessmentDate(getAssessment(client, '6mo_se'))}
                   isUploaded={isAssessmentUploaded(getAssessment(client, '6mo_se'))}
-                  onToggle={() => toggleAssessment('6mo_se')}
+                  onToggle={() => openAssessmentModal('6mo_se')}
                   onToggleUpload={() => toggleUpload('6mo_se')}
                   roleFilter={roleFilter}
                   showNote={`Current age: ${age}mo → ${seTool.name}`}
@@ -3432,7 +3486,7 @@ export default function CFAssessmentManager() {
                     isChecked={isAssessmentComplete(getAssessment(client, `dc_${item.id}`))}
                     dateCompleted={getAssessmentDate(getAssessment(client, `dc_${item.id}`))}
                     isUploaded={isAssessmentUploaded(getAssessment(client, `dc_${item.id}`))}
-                    onToggle={() => toggleAssessment(`dc_${item.id}`)}
+                    onToggle={() => openAssessmentModal(`dc_${item.id}`)}
                     onToggleUpload={() => toggleUpload(`dc_${item.id}`)}
                     roleFilter={roleFilter}
                   />
@@ -3447,7 +3501,7 @@ export default function CFAssessmentManager() {
                     isChecked={isAssessmentComplete(getAssessment(client, `dc_${item.id}`))}
                     dateCompleted={getAssessmentDate(getAssessment(client, `dc_${item.id}`))}
                     isUploaded={isAssessmentUploaded(getAssessment(client, `dc_${item.id}`))}
-                    onToggle={() => toggleAssessment(`dc_${item.id}`)}
+                    onToggle={() => openAssessmentModal(`dc_${item.id}`)}
                     onToggleUpload={() => toggleUpload(`dc_${item.id}`)}
                     roleFilter={roleFilter}
                   />
@@ -3459,7 +3513,7 @@ export default function CFAssessmentManager() {
                   isChecked={isAssessmentComplete(getAssessment(client, 'dc_se'))}
                   dateCompleted={getAssessmentDate(getAssessment(client, 'dc_se'))}
                   isUploaded={isAssessmentUploaded(getAssessment(client, 'dc_se'))}
-                  onToggle={() => toggleAssessment('dc_se')}
+                  onToggle={() => openAssessmentModal('dc_se')}
                   onToggleUpload={() => toggleUpload('dc_se')}
                   roleFilter={roleFilter}
                   showNote={`Current age: ${age}mo → ${seTool.name}`}

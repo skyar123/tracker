@@ -1096,11 +1096,6 @@ const ClientCard = ({ client, onClick, onDelete, onEdit, onDischarge, linkedClie
           </div>
         </div>
       </div>
-      <MagicImportModal 
-        isOpen={isMagicOpen} 
-        onClose={() => setIsMagicOpen(false)} 
-        onDataExtracted={handleDataExtracted} 
-      />
     </div>
   );
 };
@@ -1275,11 +1270,6 @@ const BackupModal = ({ isOpen, onClose, clients, onRestore }) => {
           </button>
         </div>
       </div>
-      <MagicImportModal 
-        isOpen={isMagicOpen} 
-        onClose={() => setIsMagicOpen(false)} 
-        onDataExtracted={handleDataExtracted} 
-      />
     </div>
   );
 };
@@ -1697,33 +1687,11 @@ const EditClientModal = ({ isOpen, onClose, onSave, client }) => {
           </button>
         </div>
       </div>
-      <MagicImportModal 
-        isOpen={isMagicOpen} 
-        onClose={() => setIsMagicOpen(false)} 
-        onDataExtracted={handleDataExtracted} 
-      />
     </div>
   );
 };
 
 const AddClientModal = ({ isOpen, onClose, onSave }) => {
-  const [isMagicOpen, setIsMagicOpen] = useState(false);
-  
-  const handleDataExtracted = (parsed) => {
-    setData(prev => ({
-      ...prev,
-      name: parsed.child_name || prev.name,
-      dob: parsed.child_dob || prev.dob,
-      admitDate: parsed.intake_date || prev.admitDate,
-      caregiver: parsed.caregiver_name || prev.caregiver,
-      customFields: {
-        ...prev.customFields,
-        caregiverDob: parsed.caregiver_dob || prev.customFields.caregiverDob,
-        diagnosis: parsed.diagnosis || prev.customFields.diagnosis,
-        insuranceType: parsed.insurance_type || prev.customFields.insuranceType,
-      }
-    }));
-  };
 
   const [data, setData] = useState({ 
     name: '', 
@@ -1760,18 +1728,9 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden">
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Plus className="w-5 h-5" /> New Family Intake
-            </h2>
-            <button 
-              onClick={() => setIsMagicOpen(true)}
-              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-sm text-white font-semibold transition-colors flex items-center gap-2"
-              title="Magic Import with AI"
-            >
-              <Sparkles className="w-4 h-4" /> AI Auto-Fill
-            </button>
-          </div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Plus className="w-5 h-5" /> New Family Intake
+          </h2>
           <button onClick={onClose} className="text-white/70 hover:text-white">
             <X className="w-5 h-5" />
           </button>
@@ -1930,11 +1889,6 @@ const AddClientModal = ({ isOpen, onClose, onSave }) => {
           </button>
         </div>
       </div>
-      <MagicImportModal 
-        isOpen={isMagicOpen} 
-        onClose={() => setIsMagicOpen(false)} 
-        onDataExtracted={handleDataExtracted} 
-      />
     </div>
   );
 };
@@ -2352,11 +2306,6 @@ const ActivityLogModal = ({ isOpen, onClose, activities, onUndo }) => {
           </button>
         </div>
       </div>
-      <MagicImportModal 
-        isOpen={isMagicOpen} 
-        onClose={() => setIsMagicOpen(false)} 
-        onDataExtracted={handleDataExtracted} 
-      />
     </div>
   );
 };
@@ -2367,6 +2316,37 @@ const ActivityLogModal = ({ isOpen, onClose, activities, onUndo }) => {
 
 export default function CFAssessmentManager() {
   const [clients, setClients] = useState([]);
+  const [isMagicOpen, setIsMagicOpen] = useState(false);
+
+  const handleMagicImport = async (parsedClients) => {
+    if (!parsedClients || !Array.isArray(parsedClients)) return;
+    
+    for (const parsed of parsedClients) {
+      if (!parsed.child_name) continue; // Skip empty entries
+      
+      const newClient = {
+        name: parsed.child_name,
+        nickname: '',
+        dob: parsed.child_dob || '',
+        admitDate: parsed.intake_date || '',
+        type: 'child',
+        caregiver: parsed.caregiver_name || '',
+        notes: '',
+        status: 'ACTIVE',
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        assessments: {},
+        ageAtAdmission: parsed.child_dob ? getAgeInMonths(parsed.child_dob) : 0,
+        customFields: {
+          caregiverDob: parsed.caregiver_dob || '',
+          diagnosis: parsed.diagnosis || '',
+          insuranceType: parsed.insurance_type || ''
+        }
+      };
+      
+      await api.saveClient(newClient);
+      setClients(prev => [...prev, newClient]);
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list');
   const [activeId, setActiveId] = useState(null);
@@ -3009,6 +2989,7 @@ export default function CFAssessmentManager() {
       </div>
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <MagicImportModal isOpen={isMagicOpen} onClose={() => setIsMagicOpen(false)} onDataExtracted={handleMagicImport} />
       <AddClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={addClient} />
       <EditClientModal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingClient(null); }} onSave={updateClient} client={editingClient} />
       <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} clients={clients} onRestore={restoreFromBackup} />

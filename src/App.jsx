@@ -18,6 +18,8 @@ import {
   getAssessmentDate,
   migrateClientToNewFormat 
 } from './assessmentUtils.js';
+import TutorialModal from './TutorialModal.jsx';
+import RulesLibrary from './RulesLibrary.jsx';
 
 // ============================================================================
 // CONFIGURATION
@@ -157,125 +159,7 @@ const ACTIVITY_TYPES = {
 // Real client data
 const DATA_VERSION = 'caseload-v2';
 
-const INITIAL_CLIENTS = [
-  {
-    id: "paxton-cody",
-    name: "Paxton Cody",
-    nickname: "Paxton",
-    dob: "2021-11-09",
-    admitDate: "2025-12-16",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "23635", sex: "M" },
-    assessments: {}
-  },
-  {
-    id: "gracelyn-gosnell",
-    name: "Gracelyn Gosnell",
-    nickname: "Gracelyn",
-    dob: "2021-11-28",
-    admitDate: "2026-02-04",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "21785", sex: "F" },
-    assessments: {}
-  },
-  {
-    id: "frances-griffinboseman",
-    name: "Frances GriffinBoseman",
-    nickname: "Frances",
-    dob: "2022-12-17",
-    admitDate: "2026-02-19",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "24095", sex: "F" },
-    assessments: {}
-  },
-  {
-    id: "royce-molina",
-    name: "Royce Molina",
-    nickname: "Royce",
-    dob: "2022-03-12",
-    admitDate: "2025-12-16",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "23449", sex: "M" },
-    assessments: {}
-  },
-  {
-    id: "skylar-parker",
-    name: "Skylar Parker",
-    nickname: "Skylar",
-    dob: "2021-05-06",
-    admitDate: "2025-09-03",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "22674", sex: "F" },
-    assessments: {}
-  },
-  {
-    id: "kaizen-reyes",
-    name: "Kaizen Reyes",
-    nickname: "Kaizen",
-    dob: "2021-06-05",
-    admitDate: "2025-07-17",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "22377", sex: "M" },
-    assessments: {}
-  },
-  {
-    id: "jacob-steinhoffbrown",
-    name: "Jacob SteinhoffBrown",
-    nickname: "Jacob",
-    dob: "2024-03-21",
-    admitDate: "",
-    type: "child",
-    caregiver: "",
-    notes: "Not Admitted",
-    status: "ACTIVE",
-    customFields: { caseloadId: "24166", sex: "M" },
-    assessments: {}
-  },
-  {
-    id: "ashton-thorton",
-    name: "Ashton Thorton",
-    nickname: "Ashton",
-    dob: "2020-10-03",
-    admitDate: "",
-    type: "child",
-    caregiver: "",
-    notes: "Not Admitted",
-    status: "ACTIVE",
-    customFields: { caseloadId: "21482", sex: "M" },
-    assessments: {}
-  },
-  {
-    id: "harlie-yoder",
-    name: "Harlie Yoder",
-    nickname: "Harlie",
-    dob: "2023-04-06",
-    admitDate: "2025-04-17",
-    type: "child",
-    caregiver: "",
-    notes: "",
-    status: "ACTIVE",
-    customFields: { caseloadId: "21705", sex: "F" },
-    assessments: {}
-  }
-];
+const INITIAL_CLIENTS = [];
 
 // ============================================================================
 // UTILITIES
@@ -2407,6 +2291,13 @@ export default function CFAssessmentManager() {
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, ACTIVE, ON_HOLD, DISCHARGED, CLOSED
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showRulesLibrary, setShowRulesLibrary] = useState(false);
+
+  const closeTutorial = () => {
+    setShowTutorial(false);
+    localStorage.setItem('cf_tutorial_seen', 'true');
+  };
   const [editingClient, setEditingClient] = useState(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [printMode, setPrintMode] = useState(false);
@@ -2431,11 +2322,14 @@ export default function CFAssessmentManager() {
           await api.migrateData(INITIAL_CLIENTS);
           localStorage.setItem('cf_data_version', DATA_VERSION);
           setClients(INITIAL_CLIENTS);
+          if (INITIAL_CLIENTS.length === 0 && !localStorage.getItem('cf_tutorial_seen')) setShowTutorial(true);
         } else {
           if (data.length === 0) {
             setClients(INITIAL_CLIENTS);
+            if (INITIAL_CLIENTS.length === 0 && !localStorage.getItem('cf_tutorial_seen')) setShowTutorial(true);
           } else {
             setClients(data);
+            if (data.length === 0 && !localStorage.getItem('cf_tutorial_seen')) setShowTutorial(true);
           }
         }
         // Load activity log
@@ -2889,6 +2783,13 @@ export default function CFAssessmentManager() {
               >
                 <FolderOpen className="w-4 h-4 text-amber-500" /> Forms
               </a>
+              <button
+                onClick={() => setShowRulesLibrary(true)}
+                className="hidden sm:flex items-center gap-2 px-3 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 transition-colors"
+                title="View Rules & Checklists"
+              >
+                <BookOpen className="w-4 h-4" /> <span className="hidden lg:inline">Rules</span>
+              </button>
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"
@@ -3607,5 +3508,11 @@ export default function CFAssessmentManager() {
     );
   };
 
-  return view === 'list' ? renderList() : renderDetail();
+  return (
+    <>
+      {view === 'list' ? renderList() : renderDetail()}
+      {showTutorial && <TutorialModal onClose={closeTutorial} />}
+      {showRulesLibrary && <RulesLibrary onClose={() => setShowRulesLibrary(false)} />}
+    </>
+  );
 }

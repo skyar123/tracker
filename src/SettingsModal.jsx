@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Key, ExternalLink } from 'lucide-react';
+import { X, Save, Key, ExternalLink, AlertTriangle } from 'lucide-react';
 
 export default function SettingsModal({ isOpen, onClose }) {
   const [apiKey, setApiKey] = useState('');
@@ -54,6 +54,26 @@ export default function SettingsModal({ isOpen, onClose }) {
             >
               Get a free API key here <ExternalLink className="w-3 h-3" />
             </a>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-red-100 space-y-2">
+            <label className="block text-sm font-bold text-red-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500" /> Danger Zone
+            </label>
+            <button 
+              onClick={() => {
+                if(confirm("DANGER: Are you absolutely sure you want to delete ALL clients? This cannot be undone. You will lose everything.")) {
+                   localStorage.removeItem('cf_clients');
+                   window.location.reload();
+                }
+              }}
+              className="w-full py-3 bg-red-50 text-red-600 font-bold hover:bg-red-100 hover:text-red-700 rounded-xl transition-colors border border-red-200"
+            >
+              Delete All Clients & Start Fresh
+            </button>
+            <p className="text-xs text-red-400">
+              This will permanently delete all client records from your local storage. Make sure you have exported a backup first!
+            </p>
           </div>
         </div>
 

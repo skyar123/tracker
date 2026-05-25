@@ -221,7 +221,8 @@ export default function BaselineChecklistModal({ client, onSave, onClose }) {
 
           {/* Table */}
           <div className="overflow-x-auto border border-slate-200 rounded-xl print:border-slate-300">
-            <table className="w-full border-collapse text-left text-xs">
+            <div className="overflow-x-auto w-full">
+              <table className="w-full border-collapse text-left text-xs">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider print:bg-slate-50">
                   <th className="p-3 w-[45%]">Assessment</th>
@@ -293,6 +294,7 @@ export default function BaselineChecklistModal({ client, onSave, onClose }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
         </div>

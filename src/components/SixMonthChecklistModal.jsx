@@ -149,7 +149,8 @@ export default function SixMonthChecklistModal({ client, onSave, onClose }) {
 
           {/* Table */}
           <div className="border border-slate-300 rounded-lg overflow-hidden print:border-black print:rounded-none">
-            <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-300 print:bg-gray-100 print:border-black">
                   <th className="p-3 font-bold text-xs uppercase text-slate-700 text-center w-1/2">Assessment</th>
@@ -199,6 +200,7 @@ export default function SixMonthChecklistModal({ client, onSave, onClose }) {
 
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="mt-8 flex justify-between items-center text-xs text-slate-500 font-medium">

@@ -3145,7 +3145,7 @@ export default function CFAssessmentManager() {
       return (
         <div className="bg-white min-h-screen p-8">
           <div className="max-w-3xl mx-auto">
-            <div className="flex justify-between items-start mb-8 pb-4 border-b-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start mb-8 pb-4 border-b-2 gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-slate-800">Child First Assessment Record</h1>
                 <p className="text-slate-500">{client.nickname || client.name} • {client.type === 'pregnant' ? 'Pregnant AA' : 'Child AA'}</p>
@@ -3177,35 +3177,37 @@ export default function CFAssessmentManager() {
             )}
 
             <h3 className="font-bold text-lg mb-4 border-b pb-2">Completed Assessments</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2">Assessment</th>
-                  <th className="text-left py-2">Phase</th>
-                  <th className="text-left py-2">Completed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(client.assessments || {})
-                  .filter(([k, v]) => v)
-                  .sort(([,a], [,b]) => new Date(a) - new Date(b))
-                  .map(([key, date]) => (
-                    <tr key={key} className="border-b border-dotted">
-                      <td className="py-2 font-medium">{key.replace(/^(base_|6mo_|dc_|q\d_)/, '').toUpperCase()}</td>
-                      <td className="py-2 text-slate-500">
-                        {key.startsWith('base_') ? 'Baseline' : 
-                         key.startsWith('6mo_') ? '6-Month' : 
-                         key.startsWith('dc_') ? 'Discharge' : 
-                         key.startsWith('q1_') ? 'Q1 (90d)' :
-                         key.startsWith('q2_') ? 'Q2 (180d SNIFF)' :
-                         key.startsWith('q3_') ? 'Q3 (270d)' : 'Other'}
-                      </td>
-                      <td className="py-2">{formatDate(date, 'long')}</td>
-                    </tr>
-                  ))
-                }
-              </tbody>
-            </table>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-sm min-w-[500px]">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2">Assessment</th>
+                    <th className="text-left py-2">Phase</th>
+                    <th className="text-left py-2">Completed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(client.assessments || {})
+                    .filter(([k, v]) => v)
+                    .sort(([,a], [,b]) => new Date(a) - new Date(b))
+                    .map(([key, date]) => (
+                      <tr key={key} className="border-b border-dotted">
+                        <td className="py-2 font-medium">{key.replace(/^(base_|6mo_|dc_|q\d_)/, '').toUpperCase()}</td>
+                        <td className="py-2 text-slate-500">
+                          {key.startsWith('base_') ? 'Baseline' : 
+                           key.startsWith('6mo_') ? '6-Month' : 
+                           key.startsWith('dc_') ? 'Discharge' : 
+                           key.startsWith('q1_') ? 'Q1 (90d)' :
+                           key.startsWith('q2_') ? 'Q2 (180d SNIFF)' :
+                           key.startsWith('q3_') ? 'Q3 (270d)' : 'Other'}
+                        </td>
+                        <td className="py-2">{formatDate(date, 'long')}</td>
+                      </tr>
+                    ))
+                  }
+                </tbody>
+              </table>
+            </div>
 
             <p className="text-xs text-slate-400 mt-8 pt-4 border-t">
               Generated {new Date().toLocaleString()} • App Version {APP_VERSION}
@@ -3221,7 +3223,7 @@ export default function CFAssessmentManager() {
         {/* Header */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-30">
           <div className="max-w-4xl mx-auto px-4 py-4">
-            <div className="flex items-start justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
               <div>
                 <button 
                   onClick={() => { setView('list'); setActiveId(null); }}
@@ -3244,7 +3246,7 @@ export default function CFAssessmentManager() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button onClick={() => setShowSniffManager(true)} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1 border border-indigo-100">
                   <Activity className="w-3.5 h-3.5" /> CRM Tracker (SNIFF)
                 </button>

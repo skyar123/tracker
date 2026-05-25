@@ -7,7 +7,7 @@ import {
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
   TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database, CheckCircle2,
   Bell, BellOff, Calendar as CalendarIcon, BarChart3, History, Undo2,
-  Settings, Layers, CheckSquare, FileSpreadsheet
+  Settings, Layers, CheckSquare, FileSpreadsheet, FastForward
 } from 'lucide-react';
 import AssessmentEntryModal from './AssessmentEntryModal.jsx';
 import MagicImportModal from './MagicImportModal.jsx';
@@ -23,6 +23,12 @@ import {
 } from './assessmentUtils.js';
 import TutorialModal from './TutorialModal.jsx';
 import RulesLibrary from './RulesLibrary.jsx';
+import SniffManager from './components/SniffManager.jsx';
+import BaselineChecklistModal from './components/BaselineChecklistModal.jsx';
+import SixMonthChecklistModal from './components/SixMonthChecklistModal.jsx';
+import TerminationChecklistModal from './components/TerminationChecklistModal.jsx';
+import { TimeEngine } from './engine/TimeEngine.js';
+import { ScoringEngine } from './engine/ScoringEngine.js';
 
 // ============================================================================
 // CONFIGURATION
@@ -2318,6 +2324,55 @@ export default function CFAssessmentManager() {
   const [clients, setClients] = useState([]);
   const [isMagicOpen, setIsMagicOpen] = useState(false);
 
+  const handleFastForward = (clientToUpdate) => {
+    const today = new Date().toISOString().split('T')[0];
+    const newAssessments = { ...clientToUpdate.assessments };
+    const days = getDaysInService(clientToUpdate.admitDate || clientToUpdate.intake_date);
+    
+    // We basically just mark everything before their current phase as completed today.
+    // For simplicity, we just mark ALL items in BASELINE, Q1, 6MO, Q2, Q3 that are 'overdue' as completed.
+    
+    const markComplete = (key) => {
+      newAssessments[key] = {
+        ...newAssessments[key],
+        completed: true,
+        date: today
+      };
+    };
+
+    // Baseline (overdue after 60 days)
+    if (days > 60) {
+      BASELINE_PROTOCOL.forEach(week => {
+        week.items.forEach(item => markComplete(`base_${item.id}`));
+      });
+      markComplete('base_se');
+      if (getMchatRequired(clientToUpdate.admitDate || clientToUpdate.intake_date, clientToUpdate.dob)) {
+        markComplete('base_mchat');
+      }
+    }
+
+    // Q1 (overdue after ~104 days)
+    if (days > 104) {
+      markComplete('q1_tx');
+      markComplete('q1_sniff');
+    }
+
+    // 6 Month (overdue after ~194 days)
+    if (days > 194) {
+      FOLLOWUP_PROTOCOL.forEach(item => markComplete(`6mo_${item.id}`));
+      markComplete('6mo_se');
+      markComplete('q2_sniff');
+    }
+
+    // Q3 (overdue after ~284 days)
+    if (days > 284) {
+      markComplete('q3_tx');
+      markComplete('q3_sniff');
+    }
+
+    updateClient({ ...clientToUpdate, assessments: newAssessments });
+  };
+
   const handleMagicImport = async (parsedClients) => {
     if (!parsedClients || !Array.isArray(parsedClients)) return;
     
@@ -2372,6 +2427,11 @@ export default function CFAssessmentManager() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showSniffManager, setShowSniffManager] = useState(false);
+  const [showFormulation, setShowFormulation] = useState(false);
+  const [showBaselineChecklist, setShowBaselineChecklist] = useState(false);
+  const [showSixMonthChecklist, setShowSixMonthChecklist] = useState(false);
+  const [showTerminationChecklist, setShowTerminationChecklist] = useState(false);
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedClients, setSelectedClients] = useState(new Set());
   const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
@@ -2863,6 +2923,14 @@ export default function CFAssessmentManager() {
                 <BookOpen className="w-4 h-4" /> <span className="hidden lg:inline">Rules</span>
               </button>
               <button
+                onClick={() => setIsMagicOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 hover:text-blue-800 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
+                title="Magic bulk import"
+              >
+                <Sparkles className="w-4 h-4 text-blue-500" />
+                <span className="hidden sm:inline">Magic Import</span>
+              </button>
+              <button
                 onClick={() => setIsModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"
               >
@@ -2993,6 +3061,59 @@ export default function CFAssessmentManager() {
       <AddClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={addClient} />
       <EditClientModal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingClient(null); }} onSave={updateClient} client={editingClient} />
       <BackupModal isOpen={isBackupModalOpen} onClose={() => setIsBackupModalOpen(false)} clients={clients} onRestore={restoreFromBackup} />
+      {showSixMonthChecklist && (
+        <SixMonthChecklistModal
+          client={client}
+          onSave={updateClient}
+          onClose={() => setShowSixMonthChecklist(false)}
+        />
+      )}
+
+      {showTerminationChecklist && (
+        <TerminationChecklistModal
+          client={client}
+          onSave={updateClient}
+          onClose={() => setShowTerminationChecklist(false)}
+        />
+      )}
+
+      {showBaselineChecklist && (
+        <BaselineChecklistModal
+          client={client}
+          onSave={updateClient}
+          onClose={() => setShowBaselineChecklist(false)}
+        />
+      )}
+
+      {showSniffManager && (
+        <SniffManager 
+          client={activeClient} 
+          onSave={updateClient} 
+          onClose={() => setShowSniffManager(false)} 
+        />
+      )}
+      
+      {showFormulation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-6">
+            <h2 className="text-2xl font-bold text-slate-800 mb-4">Clinical Formulation Dashboard</h2>
+            <div className="flex-1 overflow-y-auto space-y-4">
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <h3 className="font-bold text-blue-800">DC:0-5 Diagnostic Synthesis</h3>
+                <p className="text-sm text-blue-600 mt-2">Aggregated from ASQ-3, BITSEA, and M-CHAT-R/F scores.</p>
+              </div>
+              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                <h3 className="font-bold text-emerald-800">Child First Treatment Themes</h3>
+                <p className="text-sm text-emerald-600 mt-2">Based on trauma (PCL-5, LSC-R) and dyadic observations (CCIS).</p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setShowFormulation(false)} className="px-5 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ActivityLogModal 
         isOpen={showActivityLog} 
         onClose={() => setShowActivityLog(false)} 
@@ -3123,13 +3244,36 @@ export default function CFAssessmentManager() {
                   </div>
                 </div>
               </div>
-              <button 
-                onClick={() => setPrintMode(true)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Print Record"
-              >
-                <Printer className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowSniffManager(true)} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1 border border-indigo-100">
+                  <Activity className="w-3.5 h-3.5" /> CRM Tracker (SNIFF)
+                </button>
+                {client.type === 'pregnant' && !client.birthOfChildDate && (
+                  <button onClick={() => {
+                    const date = prompt("Enter Date of Birth (YYYY-MM-DD):");
+                    if(date) updateClient({ ...client, birthOfChildDate: date });
+                  }} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1 border border-emerald-100">
+                    <Baby className="w-3.5 h-3.5" /> Log Birth
+                  </button>
+                )}
+                <button onClick={() => setShowFormulation(true)} className="px-3 py-1.5 bg-violet-50 text-violet-700 rounded-xl text-xs font-bold hover:bg-violet-100 transition-colors flex items-center gap-1 border border-violet-100">
+                  <ClipboardList className="w-3.5 h-3.5" /> Formulation
+                </button>
+                <button onClick={() => {
+                  if(confirm("Are you sure you want to mark all past overdue assessments as completed today? This is useful for quickly backfilling a client that has been in the program for a long time.")) {
+                     handleFastForward(client);
+                  }
+                }} className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors flex items-center gap-1 border border-amber-100">
+                  <FastForward className="w-3.5 h-3.5" /> Catch-Up Mode
+                </button>
+                <button 
+                  onClick={() => setPrintMode(true)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="Print Record"
+                >
+                  <Printer className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Phase tabs */}
@@ -3178,7 +3322,12 @@ export default function CFAssessmentManager() {
               {/* Phase status card */}
               <div className={`rounded-2xl p-4 border ${phase.isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-slate-800">Baseline Status</h3>
+                  <div className="flex items-center gap-4">
+                    <h3 className="font-bold text-slate-800">Baseline Status</h3>
+                    <button onClick={() => setShowBaselineChecklist(true)} className="px-3 py-1 bg-white text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm hidden sm:flex">
+                      <CheckSquare className="w-3.5 h-3.5" /> Focused Baseline Mode
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">Due {phase.dueDate}</span>
                     <UrgencyIndicator daysUntil={phase.daysUntil} isOverdue={phase.isOverdue} />
@@ -3449,9 +3598,14 @@ export default function CFAssessmentManager() {
             <>
               <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-indigo-800 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" /> 6-Month Follow-Up
-                  </h3>
+                  <div className="flex items-center gap-4">
+                    <h3 className="font-bold text-indigo-800 flex items-center gap-2">
+                      <Calendar className="w-4 h-4" /> 6-Month Follow-Up
+                    </h3>
+                    <button onClick={() => setShowSixMonthChecklist(true)} className="px-3 py-1 bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm hidden sm:flex">
+                      <CheckSquare className="w-3.5 h-3.5" /> Focused 6-Month Mode
+                    </button>
+                  </div>
                   <span className="text-xs font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
                     Due {getDueDate(client.admitDate, 180)}
                   </span>
@@ -3504,9 +3658,14 @@ export default function CFAssessmentManager() {
           {activePhase === 'discharge' && (
             <>
               <div className="bg-slate-100 border border-slate-300 rounded-2xl p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <Archive className="w-5 h-5 text-slate-600" />
-                  <h3 className="font-bold text-slate-800">Discharge / Termination Protocol</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <Archive className="w-5 h-5 text-slate-600" />
+                    <h3 className="font-bold text-slate-800">Discharge / Termination Protocol</h3>
+                  </div>
+                  <button onClick={() => setShowTerminationChecklist(true)} className="px-3 py-1 bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm hidden sm:flex">
+                    <CheckSquare className="w-3.5 h-3.5" /> Focused Termination Mode
+                  </button>
                 </div>
                 <p className="text-sm text-slate-600">
                   Required regardless of length of service. Use <strong>current age ({age}mo)</strong> for tool selection.

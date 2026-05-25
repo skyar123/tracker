@@ -57,10 +57,17 @@ export default function MagicImportModal({ isOpen, onClose, onDataExtracted }) {
 
     try {
       const promptText = `
-Extract the following information from the provided content for ALL clients/patients found, and return it as a pure JSON array of objects `[{}, {}]`.
+Extract the following information from the provided content for ALL clients/patients found, and return it as a pure JSON array of objects.
+Example format: [{"child_name": "John Doe"}, {"child_name": "Jane Doe"}]
 Even if there is only one client, return an array with one object.
 Use empty strings "" if a field is not found or you are unsure. Do not guess information.
 Ensure dates are in YYYY-MM-DD format if possible.
+
+CRITICAL PARSING RULES:
+1. If the text is a tabular caseload list (e.g. "Name (ID) Date1 Gender Date2 SSN..."), Date1 is the Date of Birth (child_dob), and Date2 is the Intake/Admit Date (intake_date). DO NOT mix them up.
+2. DO NOT use future appointment dates as the Intake Date. Intake Date is always in the past.
+3. If both dates in the row are exactly identical, use that date for both DOB and Intake.
+4. DO NOT extract or include Social Security Numbers (SSN). Ignore them completely.
 
 Required JSON keys per object:
 - child_name (string, e.g. "John Doe")

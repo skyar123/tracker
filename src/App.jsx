@@ -7,28 +7,24 @@ import {
   Filter, Search, Edit2, MoreHorizontal, MessageSquare, Eye, EyeOff,
   TrendingUp, Zap, Archive, RefreshCw, Target, Download, Upload, Database, CheckCircle2,
   Bell, BellOff, Calendar as CalendarIcon, BarChart3, History, Undo2,
-  Settings, Layers, CheckSquare, FileSpreadsheet, FastForward
+  Settings, Layers, CheckSquare, FileSpreadsheet, ShieldAlert
 } from 'lucide-react';
 import AssessmentEntryModal from './AssessmentEntryModal.jsx';
 import MagicImportModal from './MagicImportModal.jsx';
 import SettingsModal from './SettingsModal.jsx';
+import SniffCrmModal from './SniffCrmModal.jsx';
 import { api } from './api.js';
-import { 
-  getAssessment, 
-  setAssessment, 
-  isAssessmentComplete, 
+import {
+  getAssessment,
+  setAssessment,
+  isAssessmentComplete,
   isAssessmentUploaded,
   getAssessmentDate,
-  migrateClientToNewFormat 
+  migrateClientToNewFormat
 } from './assessmentUtils.js';
 import TutorialModal from './TutorialModal.jsx';
 import RulesLibrary from './RulesLibrary.jsx';
-import SniffManager from './components/SniffManager.jsx';
-import BaselineChecklistModal from './components/BaselineChecklistModal.jsx';
-import SixMonthChecklistModal from './components/SixMonthChecklistModal.jsx';
-import TerminationChecklistModal from './components/TerminationChecklistModal.jsx';
-import { TimeEngine } from './engine/TimeEngine.js';
-import { ScoringEngine } from './engine/ScoringEngine.js';
+import { collectClientSafetyAlerts, hasSafetyAlert } from './scoringEngine.js';
 
 // ============================================================================
 // CONFIGURATION
@@ -2435,6 +2431,7 @@ export default function CFAssessmentManager() {
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedClients, setSelectedClients] = useState(new Set());
   const [syncStatus, setSyncStatus] = useState('synced'); // synced, syncing, error
+  const [sniffCrmOpen, setSniffCrmOpen] = useState(false);
 
   // Load clients and activity log from localStorage on mount
   useEffect(() => {
@@ -2683,38 +2680,27 @@ export default function CFAssessmentManager() {
 
   const openAssessmentModal = (key, def = null) => {
     if (!client) return;
-    const currentAssessment = getAssessment(client, key);
-    const isCurrentlyDone = isAssessmentComplete(currentAssessment);
-    
-    // M-CHAT special check: keep it here before opening modal
-    if (key === 'base_mchat' && !isCurrentlyDone) {
-      const isHighRisk = window.confirm(
-        "M-CHAT-R/F Score Check:\n\n" +
-        "Did the child score ≥ 3?\n\n" +
-        "• 0-2 = Low Risk ✓ (no further action)\n" +
-        "• 3-7 = Medium Risk → Follow-Up Interview required\n" +
-        "• 8-20 = High Risk → Follow-Up + immediate referral\n\n" +
-        "Click OK if score was 3 or higher."
-      );
-      
-      let updatedClient = { ...client };
-      setAssessment(updatedClient, key, { completed: new Date().toISOString().split('T')[0], uploaded: null });
-      updatedClient.mchatHighRisk = isHighRisk;
-      saveClientData(updatedClient, key, isCurrentlyDone);
-      return;
-    }
-
     setAssessmentModal({ isOpen: true, key, def });
   };
 
   const handleSaveAssessment = async (key, payload) => {
     if (!client) return;
-    
+
     let updatedClient = { ...client };
     const currentAssessment = getAssessment(client, key);
     const isCurrentlyDone = isAssessmentComplete(currentAssessment);
 
     setAssessment(updatedClient, key, payload);
+
+    // Derive M-CHAT risk flag from stored score
+    if (key === 'base_mchat' && payload?.scores?.total !== undefined) {
+      const mchatTotal = Number(payload.scores.total);
+      updatedClient.mchatHighRisk = mchatTotal >= 3;
+    }
+    if (key === 'base_mchat' && payload === null) {
+      updatedClient.mchatHighRisk = false;
+    }
+
     await saveClientData(updatedClient, key, isCurrentlyDone);
   };
 
@@ -2742,6 +2728,18 @@ export default function CFAssessmentManager() {
       console.error('Failed to save assessment:', error);
       setClients(prev => prev.map(c => c.id === activeId ? updatedClient : c));
     }
+  };
+
+  const handleSaveSniffClient = async (updatedClient) => {
+    const savedClient = await api.saveClient(updatedClient);
+    setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
+  };
+
+  const handleIncrementCcisObservation = async () => {
+    if (!client) return;
+    const updated = { ...client, ccis_observation_count: (client.ccis_observation_count || 0) + 1 };
+    const savedClient = await api.saveClient(updated);
+    setClients(prev => prev.map(c => c.id === savedClient.id ? savedClient : c));
   };
 
   const toggleUpload = async (key) => {
@@ -3140,6 +3138,32 @@ export default function CFAssessmentManager() {
     const sensoryTool = getSensoryTool(ageAtAdmit);
     const mchatRequired = client.type !== 'pregnant' && isMCHATRequired(ageAtAdmit);
 
+    // Helper: extract a one-line score summary from stored assessment data
+    const getScoreSummaryNote = (assessData, itemId) => {
+      if (!assessData?.scores) return null;
+      const s = assessData.scores;
+      const r = s.result;
+      if (!r) {
+        // Show raw stored values if no result object
+        if (itemId === 'cesdr' && s.total != null) return `Score: ${s.total}${s.total >= 16 ? ' ⚠ ≥16' : s.total > 10 ? ' ⚠ >10' : ''}`;
+        if (itemId === 'psi' && s.percentile != null) return `Percentile: ${s.percentile}th`;
+        if (itemId === 'pcl5' && s.total != null) return `Score: ${s.total}${s.total > 33 ? ' ⚠ >33' : ''}`;
+        if (itemId === 'ccis' && s.total != null) return `Score: ${s.total}${s.total >= 35 ? ' ⚠ ≥35' : ''}`;
+        if (itemId === 'mchat' && s.total != null) return `Score: ${s.total}`;
+        return null;
+      }
+      if (r.classification) {
+        const label = r.classification.replace(/_/g, ' ').toLowerCase();
+        if (itemId === 'mchat') return `${r.riskLevel || ''} RISK (${s.total ?? '?'})`;
+        if (itemId === 'cesdr') return `Score ${s.total ?? '?'} — ${label}${(s.item14 > 0 || s.item15 > 0) ? ' · ⚠ Safety items' : ''}`;
+        if (itemId === 'pcl5') return `Score ${s.total ?? '?'}${r.provisionalPTSD ? ' — PROVISIONAL PTSD' : ''}`;
+        if (itemId === 'psi') return `${s.percentile ?? '?'}th%ile — ${label}`;
+        if (itemId === 'ccis') return `Score ${s.total ?? '?'} — ${label}`;
+        return `${label}`;
+      }
+      return null;
+    };
+
     // Print mode
     if (printMode) {
       return (
@@ -3218,14 +3242,31 @@ export default function CFAssessmentManager() {
       );
     }
 
+    // Compute safety alerts for this client
+    const clientSafetyAlerts = collectClientSafetyAlerts(client);
+
     return (
       <div className="min-h-screen bg-slate-50">
+        {/* Safety banner — shown when any safety-level alert exists */}
+        {clientSafetyAlerts.length > 0 && (
+          <div className="bg-red-600 text-white px-4 py-3">
+            <div className="max-w-4xl mx-auto">
+              {clientSafetyAlerts.map((a, i) => (
+                <div key={i} className="flex items-start gap-2 mb-1 last:mb-0">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="text-sm font-bold">{a.message}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-30">
           <div className="max-w-4xl mx-auto px-4 py-4">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
               <div>
-                <button 
+                <button
                   onClick={() => { setView('list'); setActiveId(null); }}
                   className="text-slate-400 hover:text-blue-600 text-sm flex items-center gap-1 mb-1 transition-colors"
                 >
@@ -3240,12 +3281,25 @@ export default function CFAssessmentManager() {
                   <div>
                     <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                       {client.nickname || client.name}
-                      <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">v{APP_VERSION}</span>
+                      {clientSafetyAlerts.length > 0 && (
+                        <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+                          <ShieldAlert className="w-3 h-3" /> Safety Alert
+                        </span>
+                      )}
                     </h1>
                     <p className="text-xs text-slate-500">{client.caregiver} • Day {days} • {age}mo</p>
                   </div>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSniffCrmOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl hover:bg-teal-100 transition-colors"
+                  title="Open SNIFF CRM"
+                >
+                  <BarChart3 className="w-4 h-4" /> SNIFF
+                </button>
+                <button
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button onClick={() => setShowSniffManager(true)} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1 border border-indigo-100">
                   <Activity className="w-3.5 h-3.5" /> CRM Tracker (SNIFF)
@@ -3404,25 +3458,50 @@ export default function CFAssessmentManager() {
                   const weekOverdue = days > (week.week * 7 + 10);
                   return (
                     <div key={week.week}>
-                      <SectionHeader 
+                      <SectionHeader
                         title={`Week ${week.week}: ${week.title}`}
                         color={weekOverdue && !week.items.every(i => isAssessmentComplete(getAssessment(client, `base_${i.id}`))) ? 'amber' : 'slate'}
                         icon={week.week === 1 ? BookOpen : week.week === 2 ? Activity : week.week === 3 ? AlertCircle : Users}
                       />
-                      {week.items.map(item => (
-                        <AssessmentRow
-                          key={item.id}
-                          item={item}
-                          assessmentKey={`base_${item.id}`}
-                          isChecked={isAssessmentComplete(getAssessment(client, `base_${item.id}`))}
-                          dateCompleted={getAssessmentDate(getAssessment(client, `base_${item.id}`))}
-                          isUploaded={isAssessmentUploaded(getAssessment(client, `base_${item.id}`))}
-                          onToggle={() => openAssessmentModal(`base_${item.id}`)}
-                          onToggleUpload={() => toggleUpload(`base_${item.id}`)}
-                          isOverdue={weekOverdue}
-                          roleFilter={roleFilter}
-                        />
-                      ))}
+                      {/* CCIS observation counter — shown in Week 4 before CCIS row */}
+                      {week.week === 4 && (
+                        <div className="px-4 py-3 bg-violet-50 border-b border-violet-100 flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-violet-700">CCIS Observations Recorded</span>
+                            <p className="text-[10px] text-violet-500 mt-0.5">Minimum 4 required before scoring is valid</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`text-2xl font-black ${(client.ccis_observation_count || 0) >= 4 ? 'text-emerald-600' : 'text-violet-700'}`}>
+                              {client.ccis_observation_count || 0}
+                            </span>
+                            <button
+                              onClick={handleIncrementCcisObservation}
+                              className="px-3 py-1.5 text-xs font-bold bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors flex items-center gap-1"
+                            >
+                              <Plus className="w-3 h-3" /> Log Visit
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {week.items.map(item => {
+                        const assessData = getAssessment(client, `base_${item.id}`);
+                        const scoreSummary = getScoreSummaryNote(assessData, item.id);
+                        return (
+                          <AssessmentRow
+                            key={item.id}
+                            item={item}
+                            assessmentKey={`base_${item.id}`}
+                            isChecked={isAssessmentComplete(assessData)}
+                            dateCompleted={getAssessmentDate(assessData)}
+                            isUploaded={isAssessmentUploaded(assessData)}
+                            onToggle={() => openAssessmentModal(`base_${item.id}`)}
+                            onToggleUpload={() => toggleUpload(`base_${item.id}`)}
+                            isOverdue={weekOverdue}
+                            roleFilter={roleFilter}
+                            showNote={scoreSummary || item.note || null}
+                          />
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -3756,6 +3835,26 @@ export default function CFAssessmentManager() {
             </div>
           )}
         </div>
+
+        {/* Assessment Entry Modal */}
+        <AssessmentEntryModal
+          isOpen={assessmentModal.isOpen}
+          onClose={() => setAssessmentModal({ isOpen: false, key: null, def: null })}
+          onSave={handleSaveAssessment}
+          assessmentKey={assessmentModal.key}
+          assessmentDef={assessmentModal.def}
+          client={client}
+        />
+
+        {/* SNIFF CRM Modal */}
+        {sniffCrmOpen && (
+          <SniffCrmModal
+            isOpen={sniffCrmOpen}
+            onClose={() => setSniffCrmOpen(false)}
+            client={client}
+            onSave={handleSaveSniffClient}
+          />
+        )}
       </div>
     );
   };

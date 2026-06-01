@@ -3299,7 +3299,6 @@ export default function CFAssessmentManager() {
                 >
                   <BarChart3 className="w-4 h-4" /> SNIFF
                 </button>
-                <button
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button onClick={() => setShowSniffManager(true)} className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1 border border-indigo-100">
                   <Activity className="w-3.5 h-3.5" /> CRM Tracker (SNIFF)
@@ -3368,6 +3367,7 @@ export default function CFAssessmentManager() {
             </div>
           </div>
         </div>
+      </div>
 
         {/* Content */}
         <div className="max-w-4xl mx-auto p-4 space-y-6 pb-20">
